@@ -1,0 +1,22 @@
+reviewers:
+  - cgoncalves
+  - fedepaol
+  - russellb
+  - dougbtv
+  - dcbw
+  - squeed
+  - markdgray
+  - mccv1r0
+  - msherif1234
+approvers:
+  - cgoncalves
+  - fedepaol
+  - russellb
+  - dougbtv
+  - dcbw
+  - squeed
+  - markdgray
+  - mccv1r0
+  - msherif1234
+component: "Networking"
+subcomponent: "frr"
