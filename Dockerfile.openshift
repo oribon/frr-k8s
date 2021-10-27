@@ -16,7 +16,7 @@ RUN INSTALL_PKGS=" \
         " && \
 	yum install -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False $INSTALL_PKGS
 
-RUN dnf -y update && yum clean all && rm -rf /var/cache/yum/* ; rm -rf /var/cache/yum
+RUN dnf -y update && yum clean all && rm -rf /var/cache/yum/* && rm -rf /var/cache/yum
 
 # frr.sh is the entry point. This script examines environment
 # variables to direct operation and configure ovn
@@ -32,4 +32,3 @@ COPY git_info /root
 
 WORKDIR /root
 ENTRYPOINT ["/root/frr.sh", "frr-node"]
-###CMD ["/root/frr.sh", "frr-node"]

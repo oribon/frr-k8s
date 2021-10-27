@@ -22,7 +22,7 @@ frr_options=${FRR_OPTIONS:-""}
 frr_version="3"
 
 # The daemonset version must be compatible with this script.
-# The default when OVN_DAEMONSET_VERSION is not set is version 3
+# The default when FRR_DAEMONSET_VERSION is not set is version 3
 frr_daemonset_version=${FRR_DAEMONSET_VERSION:-"3"}
 
 # hostname is the host's hostname when using host networking,
@@ -94,9 +94,6 @@ frr-node() {
  
   # Sleep forever
   exec tail -f /dev/null
-  
-  #process_healthy ovnkube
-  #exit 7
 }
 
 echo "================== frr.sh --- version: ${frr_version} ================"
