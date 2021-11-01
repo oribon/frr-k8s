@@ -1,0 +1,34 @@
+#
+# This is the OpenShift FRR network image.
+#
+# The standard name for this image is frr
+#
+
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-base-openshift-4.9
+USER root
+
+ENV PYTHONDONTWRITEBYTECODE yes
+
+RUN INSTALL_PKGS=" \
+	tcpdump libpcap \
+	iproute iputils strace socat \
+	frr \
+        " && \
+	yum install -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False $INSTALL_PKGS
+
+RUN dnf -y update && yum clean all && rm -rf /var/cache/yum/* && rm -rf /var/cache/yum
+
+# frr.sh is the entry point. This script examines environment
+# variables to direct operation and configure ovn
+ADD frr.sh /root/
+ADD daemons /etc/frr
+ADD frr.conf /etc/frr
+ADD vtysh.conf /etc/frr
+
+RUN chown frr:frr /etc/frr/daemons /etc/frr/frr.conf 
+
+# copy git commit number into image
+COPY git_info /root
+
+WORKDIR /root
+ENTRYPOINT ["/root/frr.sh", "frr-node"]
