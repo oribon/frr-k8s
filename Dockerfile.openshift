@@ -19,6 +19,12 @@ RUN INSTALL_PKGS=" \
 
 RUN dnf -y update && yum clean all && rm -rf /var/cache/yum/* && rm -rf /var/cache/yum
 
+# Add tini package
+ENV TINI_VERSION v0.19.0
+ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /sbin/tini
+RUN chmod +x /sbin/tini
+
+
 # frr.sh is the entry point. This script examines environment
 # variables to direct operation and configure ovn
 ADD frr.sh /root/
