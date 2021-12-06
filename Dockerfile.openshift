@@ -14,16 +14,11 @@ RUN INSTALL_PKGS=" \
 	iproute iputils strace socat \
 	frr \
 	python3 \
+        tini \
         " && \
 	yum install -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False $INSTALL_PKGS
 
 RUN dnf -y update && yum clean all && rm -rf /var/cache/yum/* && rm -rf /var/cache/yum
-
-# Add tini package
-ENV TINI_VERSION v0.19.0
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /sbin/tini
-RUN chmod +x /sbin/tini
-
 
 # frr.sh is the entry point. This script examines environment
 # variables to direct operation and configure ovn
@@ -32,7 +27,8 @@ ADD daemons /etc/frr
 ADD frr.conf /etc/frr
 ADD vtysh.conf /etc/frr
 
-RUN chown frr:frr /etc/frr/daemons /etc/frr/frr.conf 
+RUN chown frr:frr /etc/frr/daemons /etc/frr/frr.conf
+RUN ln -s /usr/bin/tini /sbin/tini
 
 WORKDIR /root
 ENTRYPOINT ["/sbin/tini", "--"]
