@@ -4,7 +4,7 @@
 # The standard name for this image is frr
 #
 
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-base-openshift-4.14
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-base-openshift-4.14
 USER root
 
 ENV PYTHONDONTWRITEBYTECODE yes
@@ -14,8 +14,7 @@ RUN INSTALL_PKGS=" \
 	iproute iputils strace socat \
 	frr \
 	python3 \
-        tini \
-        " && \
+	catatonit" && \
 	yum install -y --setopt=tsflags=nodocs --setopt=skip_missing_names_on_install=False $INSTALL_PKGS
 
 RUN dnf -y update && yum clean all && rm -rf /var/cache/yum/* && rm -rf /var/cache/yum
@@ -28,7 +27,12 @@ ADD frr.conf /etc/frr
 ADD vtysh.conf /etc/frr
 
 RUN chown frr:frr /etc/frr/daemons /etc/frr/frr.conf
-RUN ln -s /usr/bin/tini /sbin/tini
+
+RUN ln -s /usr/libexec/podman/catatonit /sbin/tini
+RUN usermod -a -G frrvty frr
+
+COPY docker-start /usr/libexec/frr/docker-start
+RUN cp -r /usr/libexec/frr /usr/lib/ # required because of the different path on rhel
 
 WORKDIR /root
 ENTRYPOINT ["/sbin/tini", "--"]
