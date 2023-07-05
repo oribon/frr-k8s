@@ -4,28 +4,50 @@ package controller
 
 import (
 	"fmt"
+	"sort"
 
 	v1beta1 "github.com/metallb/frrk8s/api/v1beta1"
 	"github.com/metallb/frrk8s/internal/frr"
 	"github.com/metallb/frrk8s/internal/ipfamily"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-func apiToFRR(fromK8s v1beta1.FRRConfiguration) (*frr.Config, error) {
+func apiToFRR(fromK8s []v1beta1.FRRConfiguration) (*frr.Config, error) {
 	res := &frr.Config{
 		Routers: make([]*frr.RouterConfig, 0),
 		//BFDProfiles: sm.bfdProfiles,
 		//ExtraConfig: sm.extraConfig,
 	}
 
-	for _, r := range fromK8s.Spec.BGP.Routers {
-		frrRouter, err := routerToFRRConfig(r)
-		if err != nil {
-			return nil, err
+	vrfRouters := map[string]*frr.RouterConfig{} // vrf+ASN -> config
+	for _, cfg := range fromK8s {
+		for _, r := range cfg.Spec.BGP.Routers {
+			routerCfg, err := routerToFRRConfig(r)
+			if err != nil {
+				return nil, err
+			}
+
+			curr := vrfRouters[r.VRF]
+			if curr == nil {
+				vrfRouters[r.VRF] = routerCfg
+				continue
+			}
+
+			// Merging by VRF
+			curr, err = mergeRouterConfigs(curr, routerCfg)
+			if err != nil {
+				return nil, err
+			}
+
+			vrfRouters[r.VRF] = curr
 		}
-		res.Routers = append(res.Routers, frrRouter)
 	}
+
+	res.Routers = sortMap(vrfRouters)
+
 	return res, nil
 }
+
 func routerToFRRConfig(r v1beta1.Router) (*frr.RouterConfig, error) {
 	res := &frr.RouterConfig{
 		MyASN:        r.ASN,
@@ -104,4 +126,161 @@ func neighborToFRR(n v1beta1.Neighbor, ipv4Prefixes, ipv6Prefixes []string) (*fr
 
 func neighborName(ASN uint32, peerAddr string) string {
 	return fmt.Sprintf("%d@%s", ASN, peerAddr)
+}
+
+// Assumes both routers are in the same vrf
+func mergeRouterConfigs(r, toMerge *frr.RouterConfig) (*frr.RouterConfig, error) {
+	err := routersAreCompatible(r, toMerge)
+	if err != nil {
+		return nil, err
+	}
+
+	if r.RouterID == "" {
+		r.RouterID = toMerge.RouterID
+	}
+
+	v4Prefixes := sets.New(append(r.IPV4Prefixes, toMerge.IPV4Prefixes...)...)
+	v6Prefixes := sets.New(append(r.IPV6Prefixes, toMerge.IPV6Prefixes...)...)
+
+	mergedNeighbors, err := mergeNeighbors(r.Neighbors, toMerge.Neighbors)
+	if err != nil {
+		return nil, err
+	}
+
+	r.IPV4Prefixes = sets.List(v4Prefixes)
+	r.IPV6Prefixes = sets.List(v6Prefixes)
+	r.Neighbors = mergedNeighbors
+
+	return r, nil
+}
+
+// Assumes both routers are the same vrf
+func routersAreCompatible(r, toMerge *frr.RouterConfig) error {
+	if r.MyASN != toMerge.MyASN {
+		return fmt.Errorf("different asns (%d != %d) specified for same vrf: %s", r.MyASN, toMerge.MyASN, r.VRF)
+	}
+
+	bothRouterIDsNonEmpty := r.RouterID != "" && toMerge.RouterID != ""
+	routerIDsDifferent := r.RouterID != toMerge.RouterID
+	if bothRouterIDsNonEmpty && routerIDsDifferent {
+		return fmt.Errorf("different router ids (%s != %s) specified for same vrf: %s", r.RouterID, toMerge.RouterID, r.VRF)
+	}
+
+	return nil
+}
+
+// Assumes they all live in the same VRF
+func mergeNeighbors(n, toMerge []*frr.NeighborConfig) ([]*frr.NeighborConfig, error) {
+	neighbors := append(n, toMerge...)
+	if len(neighbors) == 0 {
+		return []*frr.NeighborConfig{}, nil
+	}
+
+	mergedNeighbors := map[string]*frr.NeighborConfig{}
+
+	for _, n := range neighbors {
+		curr, found := mergedNeighbors[n.Name]
+		if !found {
+			mergedNeighbors[n.Name] = n
+			continue
+		}
+
+		err := neighborsAreCompatible(curr, n)
+		if err != nil {
+			return nil, err
+		}
+
+		curr.Advertisements, err = mergeAdvertisements(curr.Advertisements, n.Advertisements)
+		if err != nil {
+			return nil, fmt.Errorf("could not merge advertisements for neighbor %s vrf %s, err: %w", n.Addr, n.VRFName, err)
+		}
+		curr.HasV4Advertisements = curr.HasV4Advertisements || n.HasV4Advertisements
+		curr.HasV6Advertisements = curr.HasV6Advertisements || n.HasV6Advertisements
+
+		mergedNeighbors[n.Name] = curr
+	}
+
+	return sortMap(mergedNeighbors), nil
+}
+
+// Assumes neighbors are in the same VRF, same IP
+func neighborsAreCompatible(n1, n2 *frr.NeighborConfig) error {
+	neighborKey := fmt.Sprintf("neighbor %s at vrf %s", n1.Addr, n1.VRFName)
+	if n1.ASN != n2.ASN {
+		return fmt.Errorf("multiple asns specified for %s", neighborKey)
+	}
+
+	if n1.Port != n2.Port {
+		return fmt.Errorf("multiple ports specified for %s", neighborKey)
+	}
+
+	if n1.SrcAddr != n2.SrcAddr {
+		return fmt.Errorf("multiple source addresses specified for %s", neighborKey)
+	}
+
+	if n1.Password != n2.Password {
+		return fmt.Errorf("multiple passwords specified for %s", neighborKey)
+	}
+
+	if n1.BFDProfile != n2.BFDProfile {
+		return fmt.Errorf("multiple bfd profiles specified for %s", neighborKey)
+	}
+
+	if n1.EBGPMultiHop != n2.EBGPMultiHop {
+		return fmt.Errorf("conflicting ebgp-multihop specified for %s", neighborKey)
+	}
+
+	// TODO: ?
+	if n1.HoldTime != n2.HoldTime {
+		return fmt.Errorf("multiple hold times specified for %s", neighborKey)
+	}
+
+	// TODO: ?
+	if n1.KeepaliveTime != n2.KeepaliveTime {
+		return fmt.Errorf("multiple keepalive times specified for %s", neighborKey)
+	}
+
+	return nil
+}
+
+// Assumes they are for the same neighbor
+func mergeAdvertisements(a, toMerge []*frr.AdvertisementConfig) ([]*frr.AdvertisementConfig, error) {
+	advs := append(a, toMerge...)
+	if len(advs) == 0 {
+		return []*frr.AdvertisementConfig{}, nil
+	}
+
+	mergedAdvs := map[string]*frr.AdvertisementConfig{}
+
+	for _, a := range advs {
+		curr, found := mergedAdvs[a.Prefix]
+		if !found {
+			mergedAdvs[a.Prefix] = a
+			continue
+		}
+
+		if curr.LocalPref != a.LocalPref {
+			return nil, fmt.Errorf("multiple local prefs specified for prefix %s", curr.Prefix)
+		}
+
+		communites := sets.New(append(curr.Communities, a.Communities...)...)
+		curr.Communities = sets.List(communites)
+
+		mergedAdvs[curr.Prefix] = curr
+	}
+
+	return sortMap(mergedAdvs), nil
+}
+
+func sortMap[T any](toSort map[string]T) []T {
+	keys := make([]string, 0)
+	for k := range toSort {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	res := make([]T, 0)
+	for _, k := range keys {
+		res = append(res, toSort[k])
+	}
+	return res
 }

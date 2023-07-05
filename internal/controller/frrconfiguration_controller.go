@@ -50,12 +50,9 @@ func (r *FRRConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if len(configs.Items) > 1 { // TODO implement merging
-		return ctrl.Result{}, nil
-	}
 
 	if len(configs.Items) == 0 {
-		empty := frrk8sv1beta1.FRRConfiguration{}
+		empty := []frrk8sv1beta1.FRRConfiguration{}
 		config, err := apiToFRR(empty)
 		if err != nil {
 			level.Error(r.Logger).Log("controller", "FRRConfigurationReconciler", "failed to translate the empty config", req.NamespacedName.String(), "error", err)
@@ -67,7 +64,7 @@ func (r *FRRConfigurationReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 		return ctrl.Result{}, nil
 	}
-	config, err := apiToFRR(configs.Items[0])
+	config, err := apiToFRR(configs.Items)
 	if err != nil {
 		level.Error(r.Logger).Log("controller", "FRRConfigurationReconciler", "failed to apply the config", req.NamespacedName.String(), "error", err)
 		return ctrl.Result{}, nil

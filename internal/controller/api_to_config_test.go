@@ -3,6 +3,8 @@
 package controller
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -153,6 +155,276 @@ func TestConversion(t *testing.T) {
 						VRF:          "vrf2",
 						IPV4Prefixes: []string{},
 						IPV6Prefixes: []string{"2001:db8::/64"},
+					},
+				},
+			},
+			err: nil,
+		},
+		{
+			name: "Multiple Routers and Neighbors, Multiple FRRConfigurations",
+			fromK8s: []v1beta1.FRRConfiguration{
+				{
+					Spec: v1beta1.FRRConfigurationSpec{
+						BGP: v1beta1.BGPConfig{
+							Routers: []v1beta1.Router{
+								{
+									ASN: 65010,
+									ID:  "192.0.2.5",
+									Neighbors: []v1beta1.Neighbor{
+										{
+											ASN:     65012,
+											Address: "192.0.2.7",
+											Port:    179,
+											ToAdvertise: v1beta1.Advertise{
+												Allowed: v1beta1.AllowedPrefixes{
+													Prefixes: []string{"192.0.2.1/32", "192.0.2.2/32"},
+													Mode:     v1beta1.AllowRestricted,
+												},
+												PrefixesWithCommunity: []v1beta1.CommunityPrefixes{
+													{
+														Community: "100",
+														Prefixes:  []string{"192.0.2.10"},
+													},
+													{
+														Community: "101",
+														Prefixes:  []string{"192.0.2.10", "192.0.2.11"},
+													},
+												},
+												PrefixesWithLocalPref: []v1beta1.LocalPrefPrefixes{
+													{
+														LocalPref: 200,
+														Prefixes:  []string{"192.0.2.10"},
+													},
+												},
+											},
+										},
+									},
+									VRF:      "",
+									Prefixes: []string{"192.0.2.0/24"},
+								},
+								{
+									ASN: 65013,
+									Neighbors: []v1beta1.Neighbor{
+										{
+											ASN:     65017,
+											Address: "192.0.2.7",
+											Port:    179,
+											ToAdvertise: v1beta1.Advertise{
+												Allowed: v1beta1.AllowedPrefixes{
+													Prefixes: []string{"192.0.2.5"},
+													Mode:     v1beta1.AllowRestricted,
+												},
+											},
+										},
+									},
+									VRF:      "vrf2",
+									Prefixes: []string{"192.0.2.0/24"},
+								},
+								{
+									ASN: 65013,
+									ID:  "2001:db8::3",
+									Neighbors: []v1beta1.Neighbor{
+										{
+											ASN:     65014,
+											Address: "2001:db8::4",
+											Port:    179,
+											ToAdvertise: v1beta1.Advertise{
+												Allowed: v1beta1.AllowedPrefixes{
+													Mode: v1beta1.AllowAll,
+												},
+											},
+										},
+									},
+									VRF:      "vrf2",
+									Prefixes: []string{"2001:db8::/64"},
+								},
+							},
+						},
+					},
+				},
+				{
+					Spec: v1beta1.FRRConfigurationSpec{
+						BGP: v1beta1.BGPConfig{
+							Routers: []v1beta1.Router{
+								{
+									ASN: 65010,
+									ID:  "192.0.2.5",
+									Neighbors: []v1beta1.Neighbor{
+										{
+											ASN:     65011,
+											Address: "192.0.2.6",
+											Port:    179,
+											ToAdvertise: v1beta1.Advertise{
+												Allowed: v1beta1.AllowedPrefixes{
+													Prefixes: []string{"192.0.3.1/32", "192.0.3.2/32"},
+													Mode:     v1beta1.AllowRestricted,
+												},
+											},
+										},
+										{
+											ASN:     65012,
+											Address: "192.0.2.7",
+											Port:    179,
+											ToAdvertise: v1beta1.Advertise{
+												Allowed: v1beta1.AllowedPrefixes{
+													Prefixes: []string{"192.0.3.3/32"},
+													Mode:     v1beta1.AllowRestricted,
+												},
+												PrefixesWithCommunity: []v1beta1.CommunityPrefixes{
+													{
+														Community: "100",
+														Prefixes:  []string{"192.0.3.20"},
+													},
+													{
+														Community: "101",
+														Prefixes:  []string{"192.0.3.21"},
+													},
+												},
+												PrefixesWithLocalPref: []v1beta1.LocalPrefPrefixes{
+													{
+														LocalPref: 200,
+														Prefixes:  []string{"192.0.3.21"},
+													},
+												},
+											},
+										},
+									},
+									VRF:      "",
+									Prefixes: []string{"192.0.3.0/24"},
+								},
+								{
+									ASN: 65013,
+									ID:  "2001:db8::3",
+									Neighbors: []v1beta1.Neighbor{
+										{
+											ASN:     65014,
+											Address: "2001:db8::4",
+											Port:    179,
+											ToAdvertise: v1beta1.Advertise{
+												Allowed: v1beta1.AllowedPrefixes{
+													Prefixes: []string{"2001:db9::/96"},
+													Mode:     v1beta1.AllowRestricted,
+												},
+											},
+										},
+									},
+									VRF:      "vrf2",
+									Prefixes: []string{"2001:db9::/64"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: &frr.Config{
+				Routers: []*frr.RouterConfig{
+					{
+						MyASN:    65010,
+						RouterID: "192.0.2.5",
+						Neighbors: []*frr.NeighborConfig{
+							{
+								IPFamily: ipfamily.IPv4,
+								Name:     "65011@192.0.2.6",
+								ASN:      65011,
+								Addr:     "192.0.2.6",
+								Port:     179,
+								Advertisements: []*frr.AdvertisementConfig{
+									{
+										IPFamily: ipfamily.IPv4,
+										Prefix:   "192.0.3.1/32",
+									},
+									{
+										IPFamily: ipfamily.IPv4,
+										Prefix:   "192.0.3.2/32",
+									},
+								},
+								HasV4Advertisements: true,
+							},
+							{
+								IPFamily: ipfamily.IPv4,
+								Name:     "65012@192.0.2.7",
+								ASN:      65012,
+								Addr:     "192.0.2.7",
+								Port:     179,
+								Advertisements: []*frr.AdvertisementConfig{
+									{
+										IPFamily: ipfamily.IPv4,
+										Prefix:   "192.0.2.1/32",
+									},
+									{
+										IPFamily: ipfamily.IPv4,
+										Prefix:   "192.0.2.2/32",
+									},
+									{
+										IPFamily:    ipfamily.IPv4,
+										Prefix:      "192.0.2.10",
+										Communities: []string{"100", "101"},
+										LocalPref:   200,
+									},
+									{
+										IPFamily:    ipfamily.IPv4,
+										Prefix:      "192.0.2.11",
+										Communities: []string{"101"},
+									},
+									{
+										IPFamily:    ipfamily.IPv4,
+										Prefix:      "192.0.3.20",
+										Communities: []string{"100"},
+									},
+									{
+										IPFamily:    ipfamily.IPv4,
+										Prefix:      "192.0.3.21",
+										Communities: []string{"200"},
+										LocalPref:   200,
+									},
+								},
+								HasV4Advertisements: true,
+							},
+						},
+						VRF:          "",
+						IPV4Prefixes: []string{"192.0.2.0/24", "192.0.3.0/24"},
+						IPV6Prefixes: []string{},
+					},
+					{
+						MyASN:    65013,
+						RouterID: "2001:db8::3",
+						Neighbors: []*frr.NeighborConfig{
+							{
+								IPFamily: ipfamily.IPv6,
+								Name:     "65014@2001:db8::4",
+								ASN:      65014,
+								Addr:     "2001:db8::4",
+								Port:     179,
+								Advertisements: []*frr.AdvertisementConfig{
+									{
+										IPFamily: ipfamily.IPv6,
+										Prefix:   "2001:db8::/64",
+									},
+									{
+										IPFamily: ipfamily.IPv6,
+										Prefix:   "2001:db9::/96",
+									},
+								},
+								HasV6Advertisements: true,
+							},
+							{
+								IPFamily: ipfamily.IPv4,
+								Name:     "65017@192.0.2.7",
+								ASN:      65017,
+								Addr:     "192.0.2.7",
+								Port:     179,
+								Advertisements: []*frr.AdvertisementConfig{
+									{
+										IPFamily: ipfamily.IPv4,
+										Prefix:   "192.0.2.5",
+									},
+								},
+								HasV4Advertisements: true,
+							},
+						},
+						VRF:          "vrf2",
+						IPV4Prefixes: []string{"192.0.2.0/24"},
+						IPV6Prefixes: []string{"2001:db8::/64", "2001:db9::/64"},
 					},
 				},
 			},
@@ -424,7 +696,7 @@ func TestConversion(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			frr, err := apiToFRR(test.fromK8s[0]) // TODO: pass the array when we start supporting merge
+			frr, err := apiToFRR(test.fromK8s)
 			if test.err != nil && err == nil {
 				t.Fatalf("expected error, got nil")
 			}
@@ -432,6 +704,8 @@ func TestConversion(t *testing.T) {
 				t.Fatalf("expected no error, got %v", err)
 			}
 			if diff := cmp.Diff(frr, test.expected); diff != "" {
+				s, _ := json.MarshalIndent(frr, "", "\t") // pretty print struct, REMOVE
+				fmt.Print(string(s))
 				t.Fatalf("config different from expected: %s", diff)
 			}
 		})
