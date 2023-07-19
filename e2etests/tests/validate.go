@@ -97,3 +97,18 @@ func ValidateNeighborCommunityPrefixes(neigh frrcontainer.FRR, community string,
 		return nil
 	}, 5*time.Second, time.Second).ShouldNot(HaveOccurred())
 }
+
+func ValidateNeighborLocalPrefForPrefix(neigh frrcontainer.FRR, prefix string, expectedLocalPref uint32, ipfam ipfamily.Family) {
+	Eventually(func() error {
+		localPrefix, err := frr.LocalPrefForPrefix(neigh, prefix, ipfam)
+		if err != nil {
+			return err
+		}
+
+		if localPrefix != expectedLocalPref {
+			return fmt.Errorf("local pref %d for prefix %s on neighbor %s does not equal %d", localPrefix, prefix, neigh.Name, expectedLocalPref)
+		}
+
+		return nil
+	}, 5*time.Second, time.Second).ShouldNot(HaveOccurred())
+}
