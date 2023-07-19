@@ -74,26 +74,31 @@ func neighborToFRR(n v1beta1.Neighbor, ipv4Prefixes, ipv6Prefixes []string) (*fr
 		EBGPMultiHop: n.EBGPMultiHop,
 	}
 
-	res.Outgoing = toAdvertiseToFRR(n.ToAdvertise, ipv4Prefixes, ipv6Prefixes)
+	res.Outgoing, err = toAdvertiseToFRR(n.ToAdvertise, ipv4Prefixes, ipv6Prefixes)
+	if err != nil {
+		return nil, err
+	}
 	res.Incoming = toReceiveToFRR(n.ToReceive)
 	return res, nil
 }
 
-func toAdvertiseToFRR(toAdvertise v1beta1.Advertise, ipv4Prefixes, ipv6Prefixes []string) frr.AllowedOut {
+func toAdvertiseToFRR(toAdvertise v1beta1.Advertise, ipv4Prefixes, ipv6Prefixes []string) (frr.AllowedOut, error) {
 	res := frr.AllowedOut{
 		Prefixes: make([]frr.OutgoingFilter, 0),
 	}
 
+	advs := map[string]frr.OutgoingFilter{}
 	if toAdvertise.Allowed.Mode == v1beta1.AllowAll {
 		for _, p := range ipv4Prefixes {
-			res.Prefixes = append(res.Prefixes, frr.OutgoingFilter{Prefix: p, IPFamily: ipfamily.IPv4})
+			advs[p] = frr.OutgoingFilter{Prefix: p, IPFamily: ipfamily.IPv4}
+			//res.Prefixes = append(res.Prefixes, frr.OutgoingFilter{Prefix: p, IPFamily: ipfamily.IPv4})
 			res.HasV4 = true
 		}
 		for _, p := range ipv6Prefixes {
-			res.Prefixes = append(res.Prefixes, frr.OutgoingFilter{Prefix: p, IPFamily: ipfamily.IPv6})
+			advs[p] = frr.OutgoingFilter{Prefix: p, IPFamily: ipfamily.IPv6}
+			//res.Prefixes = append(res.Prefixes, frr.OutgoingFilter{Prefix: p, IPFamily: ipfamily.IPv6})
 			res.HasV6 = true
 		}
-		return res
 	}
 
 	for _, p := range toAdvertise.Allowed.Prefixes {
@@ -104,9 +109,38 @@ func toAdvertiseToFRR(toAdvertise v1beta1.Advertise, ipv4Prefixes, ipv6Prefixes 
 		case ipfamily.IPv6:
 			res.HasV6 = true
 		}
-		res.Prefixes = append(res.Prefixes, frr.OutgoingFilter{Prefix: p, IPFamily: family})
+		advs[p] = frr.OutgoingFilter{Prefix: p, IPFamily: family}
+		//res.Prefixes = append(res.Prefixes, frr.OutgoingFilter{Prefix: p, IPFamily: family})
 	}
-	return res
+
+	localPrefsForPrefix := map[string]uint32{}
+	for _, pfxs := range toAdvertise.PrefixesWithLocalPref {
+		for _, p := range pfxs.Prefixes {
+			_, ok := advs[p]
+			if !ok {
+				return frr.AllowedOut{}, fmt.Errorf("prefix %s with localpref %d not in allowed list", p, pfxs.LocalPref)
+			}
+			v, ok := localPrefsForPrefix[p]
+			if !ok {
+				localPrefsForPrefix[p] = pfxs.LocalPref
+				continue
+			}
+
+			if v != pfxs.LocalPref {
+				return frr.AllowedOut{}, fmt.Errorf("duplicate localpref for prefix %s", p)
+			}
+		}
+	}
+
+	for p, lp := range localPrefsForPrefix {
+		adv, ok := advs[p]
+		if !ok { // shouldn't happen as we check in previous loop, just in case
+			return frr.AllowedOut{}, fmt.Errorf("unexpected err - no localpref prefix matching %s", p)
+		}
+		adv.LocalPref = lp
+	}
+
+	return res, nil
 }
 
 func toReceiveToFRR(toReceive v1beta1.Receive) frr.AllowedIn {
