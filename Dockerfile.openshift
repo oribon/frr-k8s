@@ -4,8 +4,35 @@
 # The standard name for this image is frr
 #
 
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.20-openshift-4.15 AS frrk8s-builder
+WORKDIR /frr-k8s
+
+COPY .git/ .git/
+
+ADD . /frr-k8s
+
+WORKDIR /frr-k8s/frr-tools/metrics
+RUN CGO_ENABLED=0 GO111MODULE=on go build -mod=vendor -o ./frr-metrics
+
+WORKDIR /frr-k8s/cmd
+RUN export SOURCE_GIT_COMMIT="${SOURCE_GIT_COMMIT:-$(git rev-parse --verify 'HEAD^{commit}')}" && \
+      export GIT_BRANCH="${GIT_BRANCH:-$(git rev-parse --abbrev-ref HEAD)}" && \
+      CGO_ENABLED=0 GO111MODULE=on go build -mod=vendor -o ./frr-k8s \
+      -ldflags "-X frr-k8s/internal/version.gitCommit=${SOURCE_GIT_COMMIT} \
+      -X frr-k8s/internal/version.gitBranch=${GIT_BRANCH}"
+
+
+# When running as non root and building in an environment that `umask` masks out
+# '+x' for others, it won't be possible to execute. Make sure all can execute,
+# just in case
+WORKDIR /frr-k8s/frr-tools/reloader
+RUN chmod a+x frr-reloader.sh
+
 FROM registry.ci.openshift.org/ocp/builder:rhel-9-base-openshift-4.16
 USER root
+
+COPY --from=frrk8s-builder /frr-k8s/cmd/frr-k8s \
+      /frr-k8s/frr-tools/reloader/frr-reloader.sh /frr-k8s/frr-tools/metrics/frr-metrics /
 
 ENV PYTHONDONTWRITEBYTECODE yes
 
