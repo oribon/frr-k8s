@@ -1,0 +1,299 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    control-plane: frr-k8s
+    app.kubernetes.io/name: namespace
+    app.kubernetes.io/instance: system
+    app.kubernetes.io/component: frr-k8s
+    app.kubernetes.io/created-by: frr-k8s
+    app.kubernetes.io/part-of: frr-k8s
+    app.kubernetes.io/managed-by: kustomize
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+  name: system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: daemon
+  namespace: system
+  labels:
+    control-plane: frr-k8s
+    app.kubernetes.io/name: frr-k8s
+    app.kubernetes.io/instance: frr-k8s
+    app.kubernetes.io/component: frr-k8s
+    app.kubernetes.io/created-by: frr-k8s
+    app.kubernetes.io/part-of: frr-k8s
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    matchLabels:
+      control-plane: frr-k8s
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: frr-k8s
+      labels:
+        control-plane: frr-k8s
+        app: frr-k8s
+    spec:
+      containers:
+      - command:
+        - /frr-k8s
+        args:
+        - "--node-name=$(NODE_NAME)"
+        - "--log-level=info"
+        - "--namespace=$(NAMESPACE)"
+        image: controller:latest
+        imagePullPolicy: IfNotPresent
+        name: frr-k8s
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+            host: 127.0.0.1
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+            host: 127.0.0.1
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        # TODO(user): Configure the resources accordingly based on the project requirements.
+        # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        volumeMounts:
+        - name: reloader
+          mountPath: /etc/frr_reloader
+        env:
+        - name: FRR_CONFIG_FILE
+          value: /etc/frr_reloader/frr.conf
+        - name: FRR_RELOADER_PID_FILE
+          value: /etc/frr_reloader/reloader.pid
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+      - name: frr
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN", "NET_RAW", "SYS_ADMIN", "NET_BIND_SERVICE"]
+        image: quay.io/frrouting/frr:8.4.2
+        env:
+          - name: TINI_SUBREAPER
+            value: "true"
+        volumeMounts:
+          - name: frr-sockets
+            mountPath: /var/run/frr
+          - name: frr-conf
+            mountPath: /etc/frr
+        # The command is FRR's default entrypoint & waiting for the log file to appear and tailing it.
+        # If the log file isn't created in 60 seconds the tail fails and the container is restarted.
+        # This workaround is needed to have the frr logs as part of kubectl logs -c frr < k8s-frr-podname >.
+        command:
+          - /bin/sh
+          - -c
+          - |
+            /sbin/tini -- /usr/lib/frr/docker-start &
+            attempts=0
+            until [[ -f /etc/frr/frr.log || $attempts -eq 60 ]]; do
+              sleep 1
+              attempts=$(( $attempts + 1 ))
+            done
+            tail -f /etc/frr/frr.log
+        livenessProbe:
+          httpGet:
+            path: /livez
+            port: 7573
+            host: 127.0.0.1
+          periodSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /livez
+            port: 7573
+            host: 127.0.0.1
+          failureThreshold: 30
+          periodSeconds: 5
+      - name: frr-metrics
+        image: quay.io/frrouting/frr:8.4.2
+        command: ["/etc/frr_metrics/frr-metrics"]
+        args:
+          - --metrics-port=7573
+          - --metrics-bind-address=127.0.0.1
+        ports:
+          - containerPort: 7573
+            name: monitoring
+        volumeMounts:
+          - name: frr-sockets
+            mountPath: /var/run/frr
+          - name: frr-conf
+            mountPath: /etc/frr
+          - name: metrics
+            mountPath: /etc/frr_metrics
+      - name: reloader
+        image: quay.io/frrouting/frr:8.4.2
+        command: ["/etc/frr_reloader/frr-reloader.sh"]
+        volumeMounts:
+          - name: frr-sockets
+            mountPath: /var/run/frr
+          - name: frr-conf
+            mountPath: /etc/frr
+          - name: reloader
+            mountPath: /etc/frr_reloader
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+      volumes:
+        - name: frr-sockets
+          emptyDir: {}
+        - name: frr-startup
+          configMap:
+            name: frr-startup
+        - name: frr-conf
+          emptyDir: {}
+        - name: reloader
+          emptyDir: {}
+        - name: metrics
+          emptyDir: {}
+      initContainers:
+        # Copies the initial config files with the right permissions to the shared volume.
+        - name: cp-frr-files
+          securityContext:
+            runAsUser: 100
+            runAsGroup: 101
+          image: quay.io/frrouting/frr:8.4.2
+          command: ["/bin/sh", "-c", "cp -rLf /tmp/frr/* /etc/frr/"]
+          volumeMounts:
+            - name: frr-startup
+              mountPath: /tmp/frr
+            - name: frr-conf
+              mountPath: /etc/frr
+        # Copies the reloader to the shared volume between the k8s-frr controller and reloader.
+        - name: cp-reloader
+          image: controller:latest
+          command: ["/bin/sh", "-c", "cp -f /frr-reloader.sh /etc/frr_reloader/"]
+          volumeMounts:
+            - name: reloader
+              mountPath: /etc/frr_reloader
+        - name: cp-metrics
+          image: controller:latest
+          command: ["/bin/sh", "-c", "cp -f /frr-metrics /etc/frr_metrics/"]
+          volumeMounts:
+            - name: metrics
+              mountPath: /etc/frr_metrics
+      serviceAccountName: daemon
+      terminationGracePeriodSeconds: 10
+      shareProcessNamespace: true
+      hostNetwork: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-server
+  namespace: system
+  labels:
+    control-plane: webhook-server
+    app.kubernetes.io/name: frr-k8s
+    app.kubernetes.io/instance: frr-k8s
+    app.kubernetes.io/component: frr-k8s
+    app.kubernetes.io/created-by: frr-k8s
+    app.kubernetes.io/part-of: frr-k8s
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    matchLabels:
+      control-plane: webhook-server
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: frr-k8s-webhook-server
+      labels:
+        control-plane: webhook-server
+        app: frr-k8s-webhook-server
+    spec:
+      containers:
+      - command:
+        - /frr-k8s
+        args:
+        - "--log-level=info"
+        - "--webhook-mode=onlywebhook"
+        - "--namespace=$(NAMESPACE)"
+        - "--health-probe-bind-address=:8081"
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        image: controller:latest
+        imagePullPolicy: IfNotPresent
+        name: frr-k8s-webhook-server
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        # TODO(user): Configure the resources accordingly based on the project requirements.
+        # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        volumeMounts:
+        - name: cert
+          mountPath: /tmp/k8s-webhook-server/serving-certs
+          readOnly: true
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+      volumes:
+        - name: cert
+          secret:
+            defaultMode: 420
+            secretName: webhook-server-cert
+      serviceAccountName: daemon
+      terminationGracePeriodSeconds: 10

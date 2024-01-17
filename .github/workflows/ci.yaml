@@ -1,0 +1,189 @@
+name: CI
+
+on:
+  merge_group:
+  pull_request:
+    paths-ignore:
+      - 'DCO'
+      - 'LICENSE'
+      - 'README.md'
+      - 'HOW_TO_RELEASE.md'
+      - 'RELEASE_NOTES.md'
+    branches:
+      - "main"
+      - "v**"
+  workflow_dispatch:
+
+jobs:
+  static-security-analysis:
+    runs-on: ubuntu-22.04
+    env:
+      GO111MODULE: on
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: -exclude-dir e2etest -severity medium ./...
+
+      - name: Golang Vulncheck
+        uses: Templum/govulncheck-action@v1.0.0
+        with:
+          skip-upload: true
+
+  check-changelog:
+    runs-on: ubuntu-22.04
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v41
+
+      - name: Check if release notes where changed
+        run: |
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            if [ "$file" = "RELEASE_NOTES.md" ]; then
+              exit 0
+            fi
+          done
+          echo "Release notes must be changed"
+          exit 1
+
+  commitlint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: wagoid/commitlint-github-action@v5
+
+  unit-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.12.0
+        with:
+          access_token: ${{ github.token }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Unit Tests
+        run: |
+          make test
+
+      - name: Lint
+        run: |
+          ENV=host make lint
+          make bumplicense
+          go mod tidy
+          pushd e2etests
+          go mod tidy
+          popd
+          make manifests
+          make generate-all-in-one
+          make api-docs
+          make checkuncommitted
+
+      - name: Helm doc generate
+        uses: docker://jnorwood/helm-docs:v1.10.0
+
+      - name: Check if  docs are different
+        run: make checkuncommitted
+
+  build-test-images:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: true
+    steps:
+      - name: Code checkout
+        uses: actions/checkout@v4
+      - name: Setup docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and export the image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          tags: quay.io/metallb/frr-k8s:dev
+          file: Dockerfile
+          outputs: type=docker,dest=/tmp/frrk8s.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Upload frrk8s artifact
+        uses: actions/upload-artifact@v3
+        with:
+          retention-days: 1
+          name: image-tar-frrk8s
+          path: /tmp/frrk8s.tar
+  e2e:
+    runs-on: ubuntu-22.04
+    needs:
+      - unit-tests
+      - build-test-images
+      - commitlint
+    strategy:
+      fail-fast: false
+      matrix:
+        ip-family: [ipv4, ipv6, dual]
+        deployment: [manifests, helm]
+        exclude:
+        - ip-family: ipv6
+          deployment: helm
+        - ip-family: dual
+          deployment: helm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kernel modules
+        run: |
+          sudo apt-get update
+          sudo apt-get install linux-modules-extra-$(uname -r)
+
+      - name: Download frr8ks images
+        uses: actions/download-artifact@v3
+        with:
+          path: image
+
+      - name: Load image
+        working-directory: image
+        run: |
+          docker load -i image-tar-frrk8s/frrk8s.tar
+
+      - name: Deploy on kind
+        run: |
+          MAKE_RULE="deploy-with-prometheus"
+          if [ ${{ matrix.deployment }} = "helm" ]; then MAKE_RULE="deploy-helm"; fi
+          LOGLEVEL=debug IP_FAMILY="${{ matrix.ip-family }}" make $MAKE_RULE
+          mkdir -p /tmp/kind_logs/
+
+      - name: E2E
+        run: |
+          SKIP="none"
+          if [ "${{ matrix.ip-family }}" == "ipv4" ]; then SKIP="$SKIP\|IPV6\|DUALSTACK"; fi
+          if [ "${{ matrix.ip-family }}" == "dual" ]; then SKIP="$SKIP\|IPV6"; fi
+          if [ "${{ matrix.ip-family }}" == "ipv6" ]; then SKIP="$SKIP\|IPV4\|DUALSTACK"; fi
+          GINKGO_ARGS="--skip $SKIP" TEST_ARGS="--report-path=/tmp/kind_logs" make e2etests
+
+      - name: Export kind logs
+        if: ${{ failure() }}
+        run:
+          make kind-export-logs
+
+      - name: Collect Logs
+        if: ${{ failure() }}
+        uses: ./.github/workflows/composite/collectlogs
+        with:
+          artifact-name: kind-logs-${{ matrix.ip-family }}-${{ matrix.deployment }}
