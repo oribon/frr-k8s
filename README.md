@@ -1,4 +1,6 @@
-# frr-k8s
+# FRR-k8s
+
+<img src="docs/logo.png" alt="logo" width="200"/>
 
 A kubernetes based daemonset that exposes a subset of the FRR API in a kubernetes compliant manner.
 
@@ -309,7 +311,6 @@ The `FRRNodeState` resource exposes the status of the FRR instance running on ea
 
 This includes:
 
-- `desiredConfig`: the desired FRR config, as the result of translating all of the `FRRConfiguration`s for the given node.
 - `runningConfig`: the current FRR running config, which is the configuration the FRR instance is currently running with.
 - `lastReloadResult`: the status of the last configuration update operation by FRR, contains "success" or an error.
 - `lastConversionResult`: the status of the last translation between the `FRRConfiguration`s resources and FRR's configuration, contains "success" or an error.

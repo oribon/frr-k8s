@@ -1,11 +1,27 @@
 # FRRK8s Release Notes
 
-## New Release
+## Release v0.0.10
+
+### New features
+
+- FRR: bump to 9.0.2, allow to peer with localhost ([PR 118](https://github.com/metallb/frr-k8s/pull/118))
+- Add option to configure BGP connect time ([PR_119](https://github.com/metallb/frr-k8s/pull/119))
+
+## Release v0.0.9
+
+### Bug fixes
+ - helm: namespace all namespaced resources ([PR 117](https://github.com/metallb/frr-k8s/pull/117))
+
+
+## Release v0.0.8
 
 ### Features
 
 - Support a --always-block parameter. The parameter accepts a list of comma separated cidrs to always block. This is useful to protect well known cidrs such as pods or clusterIPs. ([PR 88](https://github.com/metallb/frr-k8s/pull/88))
-- Support restarting the webhook pod when the rotator updates its cert secret.([PR 100](https://github.com/metallb/frr-k8s/pull/100)) 
+- Support restarting the webhook pod when the rotator updates its cert secret.([PR 100](https://github.com/metallb/frr-k8s/pull/100))
+- Add a demo environment creation script ([PR 107](https://github.com/metallb/frr-k8s/pull/107))
+
+- Remove the DesiredConfig field from the status API ([PR 110](https://github.com/metallb/frr-k8s/pull/110))
 
 ### Bug fixes
 
@@ -18,6 +34,10 @@
 ### Chores
 
 - helm: add an option to disable the webhook's cert rotation. ([PR 93](https://github.com/metallb/frr-k8s/pull/93))
+- add a new logo!
+- CI: add a MetalLB E2E lane. ([PR 99](https://github.com/metallb/frr-k8s/pull/99))
+- CI: don't run auto-generated files checks on dependabot PRs ([PR 111](https://github.com/metallb/frr-k8s/pull/111))
+- kubectl: don't download if cluster is not reacheable ([PR 112](https://github.com/metallb/frr-k8s/pull/112))
 
 ## Release v0.0.4
 

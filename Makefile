@@ -158,13 +158,13 @@ KUSTOMIZE_LAYER ?= default
 .PHONY: deploy-controller
 deploy-controller: kubectl kustomize ## Deploy controller to the K8s cluster specified in $KUBECONFIG.
 	cd config/frr-k8s && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUBECTL) -n frr-k8s-system delete ds frr-k8s-daemon || true
+	$(KUBECTL) -n ${NAMESPACE} delete ds frr-k8s-daemon || true
 
 	$(KUSTOMIZE) build config/$(KUSTOMIZE_LAYER) | \
 		sed '/--log-level/a\        - --always-block=192.167.9.0/24,fc00:f553:ccd:e799::/64' |\
 		sed 's/--log-level=info/--log-level='$(LOGLEVEL)'/' | $(KUBECTL) apply -f -
 	sleep 2s # wait for daemonset to be created
-	$(KUBECTL) -n frr-k8s-system wait --for=condition=Ready --all pods --timeout 300s
+	$(KUBECTL) -n ${NAMESPACE} wait --for=condition=Ready --all pods --timeout 300s
 
 .PHONY: deploy-helm
 deploy-helm: helm deploy-cluster deploy-prometheus
@@ -172,9 +172,9 @@ deploy-helm: helm deploy-cluster deploy-prometheus
 	$(KUBECTL) label ns ${NAMESPACE} pod-security.kubernetes.io/enforce=privileged
 	$(HELM) install frrk8s charts/frr-k8s/ --set frrk8s.image.tag=${IMG_TAG} --set frrk8s.logLevel=debug --set prometheus.rbacPrometheus=true \
 	--set prometheus.serviceAccount=prometheus-k8s --set prometheus.namespace=monitoring --set prometheus.serviceMonitor.enabled=true \
-	--set frrk8s.alwaysBlock='192.167.9.0/24\,fc00:f553:ccd:e799::/64' --namespace ${NAMESPACE}
+	--set frrk8s.alwaysBlock='192.167.9.0/24\,fc00:f553:ccd:e799::/64' --namespace ${NAMESPACE} $(HELM_ARGS)
 	sleep 2s # wait for daemonset to be created
-	$(KUBECTL) -n frr-k8s-system wait --for=condition=Ready --all pods --timeout 300s
+	$(KUBECTL) -n ${NAMESPACE} wait --for=condition=Ready --all pods --timeout 300s
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
@@ -199,7 +199,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 .PHONY: kubectl
 kubectl: $(KUBECTL) ## Download kubectl locally if necessary. If wrong version is installed, it will be overwritten.
 $(KUBECTL): $(LOCALBIN)
-	test -s $(LOCALBIN)/kubectl && $(LOCALBIN)/kubectl version | grep -q $(KUBECTL_VERSION) || \
+	test -s $(LOCALBIN)/kubectl && $(LOCALBIN)/kubectl version --client | grep -q $(KUBECTL_VERSION) || \
 	curl -o $(LOCALBIN)/kubectl -LO https://dl.k8s.io/release/$(KUBECTL_VERSION)/bin/$$(go env GOOS)/$$(go env GOARCH)/kubectl
 	chmod +x $(LOCALBIN)/kubectl
 
@@ -293,3 +293,8 @@ bumpversion:
 .PHONY: cutrelease
 cutrelease: bumpversion generate-all-in-one helm-docs
 	hack/release/release.sh
+
+.PHONY: demoenv
+demoenv: deploy
+	cd hack/demo && ./demo.sh 
+
