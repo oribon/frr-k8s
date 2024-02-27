@@ -4,7 +4,7 @@
 # The standard name for this image is frr
 #
 
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.20-openshift-4.15 AS frrk8s-builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.21-openshift-4.16 AS frrk8s-builder
 WORKDIR /frr-k8s
 
 COPY .git/ .git/
