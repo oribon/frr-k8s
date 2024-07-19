@@ -220,6 +220,25 @@ _Appears in:_
 | `runningConfig` _string_ | RunningConfig represents the current FRR running config, which is the configuration the FRR instance is currently running with. |  |  |
 | `lastConversionResult` _string_ | LastConversionResult is the status of the last translation between the `FRRConfiguration`s resources and FRR's configuration, contains "success" or an error. |  |  |
 | `lastReloadResult` _string_ | LastReloadResult represents the status of the last configuration update operation by FRR, contains "success" or an error. |  |  |
+<<<<<<< HEAD
+=======
+
+
+#### Import
+
+
+
+Import represents the possible imported VRFs to a given router.
+
+
+
+_Appears in:_
+- [Router](#router)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `vrf` _string_ | Vrf is the vrf we want to import from |  |  |
+>>>>>>> upstreamfrr/main
 
 
 #### LocalPrefPrefixes
@@ -263,6 +282,10 @@ _Appears in:_
 | `connectTime` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v/#duration-v1-meta)_ | Requested BGP connect time, controls how long BGP waits between connection attempts to a neighbor. |  |  |
 | `ebgpMultiHop` _boolean_ | EBGPMultiHop indicates if the BGPPeer is multi-hops away. |  |  |
 | `bfdProfile` _string_ | BFDProfile is the name of the BFD Profile to be used for the BFD session associated<br />to the BGP session. If not set, the BFD session won't be set up. |  |  |
+<<<<<<< HEAD
+=======
+| `enableGracefulRestart` _boolean_ | EnableGracefulRestart allows BGP peer to continue to forward data packets along<br />known routes while the routing protocol information is being restored. If<br />the session is already established, the configuration will have effect<br />after reconnecting to the peer |  |  |
+>>>>>>> upstreamfrr/main
 | `toAdvertise` _[Advertise](#advertise)_ | ToAdvertise represents the list of prefixes to advertise to the given neighbor<br />and the associated properties. |  |  |
 | `toReceive` _[Receive](#receive)_ | ToReceive represents the list of prefixes to receive from the given neighbor. |  |  |
 | `disableMP` _boolean_ | To set if we want to disable MP BGP that will separate IPv4 and IPv6 route exchanges into distinct BGP sessions. | false |  |
@@ -338,6 +361,10 @@ _Appears in:_
 | `vrf` _string_ | VRF is the host vrf used to establish sessions from this router. |  |  |
 | `neighbors` _[Neighbor](#neighbor) array_ | Neighbors is the list of neighbors we want to establish BGP sessions with. |  |  |
 | `prefixes` _string array_ | Prefixes is the list of prefixes we want to advertise from this router instance. |  |  |
+<<<<<<< HEAD
+=======
+| `imports` _[Import](#import) array_ | Imports is the list of imported VRFs we want for this router / vrf. |  |  |
+>>>>>>> upstreamfrr/main
 
 
 #### SecretReference
