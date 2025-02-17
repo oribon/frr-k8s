@@ -15,6 +15,7 @@ import (
 type Neighbor struct {
 	ID             string
 	VRF            string
+	BGPState       string
 	Connected      bool
 	LocalAS        string
 	RemoteAS       string
@@ -107,6 +108,17 @@ type BFDPeer struct {
 	RemoteDetectMultiplier    int    `json:"remote-detect-multiplier"`
 }
 
+type BFDPeerCounters struct {
+	Peer                string `json:"peer"`
+	ControlPacketInput  int    `json:"control-packet-input"`
+	ControlPacketOutput int    `json:"control-packet-output"`
+	EchoPacketInput     int    `json:"echo-packet-input"`
+	EchoPacketOutput    int    `json:"echo-packet-output"`
+	SessionUpEvents     int    `json:"session-up"`
+	SessionDownEvents   int    `json:"session-down"`
+	ZebraNotifications  int    `json:"zebra-notifications"`
+}
+
 // parseNeighbour takes the result of a show bgp neighbor x.y.w.z
 // and parses the informations related to the neighbour.
 func ParseNeighbour(vtyshRes string) (*Neighbor, error) {
@@ -134,6 +146,7 @@ func ParseNeighbour(vtyshRes string) (*Neighbor, error) {
 		}
 		return &Neighbor{
 			ID:             k,
+			BGPState:       n.BgpState,
 			Connected:      connected,
 			LocalAS:        strconv.Itoa(n.LocalAs),
 			RemoteAS:       strconv.Itoa(n.RemoteAs),
@@ -170,6 +183,7 @@ func ParseNeighbours(vtyshRes string) ([]*Neighbor, error) {
 		}
 		res = append(res, &Neighbor{
 			ID:             k,
+			BGPState:       n.BgpState,
 			Connected:      connected,
 			LocalAS:        strconv.Itoa(n.LocalAs),
 			RemoteAS:       strconv.Itoa(n.RemoteAs),
