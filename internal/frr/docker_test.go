@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"errors"
 
@@ -25,7 +24,7 @@ var (
 )
 
 const (
-	frrImageTag = "10.4.1"
+	frrImageTag = "10.4.3"
 )
 
 func TestMain(m *testing.M) {
@@ -34,7 +33,6 @@ func TestMain(m *testing.M) {
 	}
 
 	// override reloadConfig so it doesn't try to reload it.
-	debounceTimeout = time.Millisecond
 	reloadConfig = func() error { return nil }
 
 	flag.Parse()
