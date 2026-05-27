@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,7 +22,10 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-const testData = "testdata/"
+const (
+	testDebounceTimeout = time.Millisecond
+	testData            = "testdata/"
+)
 
 var update = flag.Bool("update", false, "update .golden files")
 
@@ -79,6 +83,15 @@ func testSetup(t *testing.T) {
 	osHostname = testOsHostname
 }
 
+func testNewFRR(t *testing.T, ctx context.Context) *FRR {
+	t.Helper()
+	frr, err := NewFRR(ctx, emptyCB, testDebounceTimeout)
+	if err != nil {
+		t.Fatalf("Failed to create FRR instance: %s", err)
+	}
+	return frr
+}
+
 func testCheckConfigFile(t *testing.T) {
 	configFile, goldenFile := testGenerateFileNames(t)
 
@@ -101,7 +114,7 @@ var emptyCB = func() {}
 func TestSingleSession(t *testing.T) {
 	testSetup(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 	defer cancel()
 
 	config := Config{
@@ -138,7 +151,7 @@ func TestSingleSession(t *testing.T) {
 func TestTwoRoutersTwoNeighbors(t *testing.T) {
 	testSetup(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 	defer cancel()
 
 	config := Config{
@@ -204,7 +217,7 @@ func TestTwoRoutersTwoNeighbors(t *testing.T) {
 func TestTwoSessionsAcceptAll(t *testing.T) {
 	testSetup(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 	defer cancel()
 
 	config := Config{
@@ -243,7 +256,7 @@ func TestTwoSessionsAcceptAll(t *testing.T) {
 func TestTwoSessionsAcceptSomeV4(t *testing.T) {
 	testSetup(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 	defer cancel()
 
 	config := Config{
@@ -296,7 +309,7 @@ func TestTwoSessionsAcceptSomeV4(t *testing.T) {
 func TestTwoSessionsAcceptV4AndV6(t *testing.T) {
 	testSetup(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 	defer cancel()
 
 	config := Config{
@@ -416,7 +429,7 @@ func TestSingleSessionWithEBGPMultihop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 
 	config := Config{
 		Routers: []*RouterConfig{
@@ -454,7 +467,7 @@ func TestSingleSessionWithIPv6SingleHop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 
 	config := Config{
 		Routers: []*RouterConfig{
@@ -492,7 +505,7 @@ func TestMultipleNeighborsOneV4AndOneV6(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 
 	config := Config{
 		Routers: []*RouterConfig{
@@ -541,7 +554,7 @@ func TestMultipleNeighborsOneV4AndOneV6DualStackIPFamily(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 
 	config := Config{
 		Routers: []*RouterConfig{
@@ -589,7 +602,7 @@ func TestMultipleRoutersMultipleNeighs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 
 	config := Config{
 		Routers: []*RouterConfig{
@@ -665,7 +678,7 @@ func TestSingleSessionWithEBGPMultihopAndExtras(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 
 	config := Config{
 		Routers: []*RouterConfig{
@@ -704,7 +717,7 @@ func TestSingleSessionWithAlwaysBlock(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 
 	config := Config{
 		Routers: []*RouterConfig{
@@ -776,7 +789,7 @@ func TestSingleSessionWithGracefulRestart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 
 	config := Config{
 		Routers: []*RouterConfig{
@@ -803,13 +816,46 @@ func TestSingleSessionWithGracefulRestart(t *testing.T) {
 	testCheckConfigFile(t)
 }
 
+func TestSingleSessionWithLocalASN(t *testing.T) {
+	testSetup(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	frr := testNewFRR(t, ctx)
+
+	config := Config{
+		Routers: []*RouterConfig{
+			{
+				MyASN: 65000,
+				Neighbors: []*NeighborConfig{
+					{
+						IPFamily: ipfamily.IPv4,
+						ASN:      "65001",
+						Addr:     "192.168.1.2",
+						LocalASN: 65410,
+					},
+				},
+			},
+		},
+		Loglevel: LevelFrom(logging.LevelInfo),
+	}
+
+	err := frr.ApplyConfig(&config)
+	if err != nil {
+		t.Fatalf("Failed to apply config: %s", err)
+	}
+
+	testCheckConfigFile(t)
+}
+
 func TestMultipleRoutersImportVRFs(t *testing.T) {
 	testSetup(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 
 	config := Config{
 		Routers: []*RouterConfig{
@@ -854,7 +900,7 @@ func TestMultipleRoutersImportVRFs(t *testing.T) {
 func TestSingleSessionWithInternalASN(t *testing.T) {
 	testSetup(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 	defer cancel()
 
 	config := Config{
@@ -889,7 +935,7 @@ func TestSingleSessionWithInternalASN(t *testing.T) {
 func TestSingleSessionWithExternalASN(t *testing.T) {
 	testSetup(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 	defer cancel()
 
 	config := Config{
@@ -923,7 +969,7 @@ func TestSingleSessionWithExternalASN(t *testing.T) {
 func TestSingleUnnumberedSession(t *testing.T) {
 	testSetup(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 	defer cancel()
 
 	config := Config{
@@ -963,11 +1009,89 @@ func TestSingleUnnumberedSession(t *testing.T) {
 func TestLogLevelDebugging(t *testing.T) {
 	testSetup(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	frr := NewFRR(ctx, emptyCB)
+	frr := testNewFRR(t, ctx)
 	defer cancel()
 
 	config := Config{
 		Loglevel: LevelFrom(logging.LevelDebug),
+	}
+	err := frr.ApplyConfig(&config)
+	if err != nil {
+		t.Fatalf("Failed to apply config: %s", err)
+	}
+
+	testCheckConfigFile(t)
+}
+
+func TestSingleSessionExplicitRouterID(t *testing.T) {
+	testSetup(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	frr := testNewFRR(t, ctx)
+	defer cancel()
+
+	config := Config{
+		Routers: []*RouterConfig{
+			{
+				MyASN:    65000,
+				RouterID: "10.10.10.1",
+				Neighbors: []*NeighborConfig{
+					{
+						IPFamily: ipfamily.IPv4,
+						ASN:      "65001",
+						Addr:     "192.168.1.2",
+						Port:     ptr.To[uint16](4567),
+						Outgoing: AllowedOut{
+							PrefixesV4: []string{
+								"192.169.1.0/24",
+							},
+						},
+					},
+				},
+				IPV4Prefixes: []string{"192.169.1.0/24"},
+			},
+		},
+		Loglevel: LevelFrom(logging.LevelInfo),
+	}
+	err := frr.ApplyConfig(&config)
+	if err != nil {
+		t.Fatalf("Failed to apply config: %s", err)
+	}
+
+	testCheckConfigFile(t)
+}
+
+func TestSingleSessionIPv6OnlyNode(t *testing.T) {
+	testSetup(t)
+	netInterfaceAddrs = func() ([]net.Addr, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() { netInterfaceAddrs = net.InterfaceAddrs })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	frr := testNewFRR(t, ctx)
+	defer cancel()
+
+	config := Config{
+		Routers: []*RouterConfig{
+			{
+				MyASN: 65000,
+				Neighbors: []*NeighborConfig{
+					{
+						IPFamily: ipfamily.IPv6,
+						ASN:      "65001",
+						Addr:     "2001:db8::1",
+						Port:     ptr.To[uint16](179),
+						Outgoing: AllowedOut{
+							PrefixesV6: []string{
+								"2001:db8:1::/64",
+							},
+						},
+					},
+				},
+				IPV6Prefixes: []string{"2001:db8:1::/64"},
+			},
+		},
+		Loglevel: LevelFrom(logging.LevelInfo),
 	}
 	err := frr.ApplyConfig(&config)
 	if err != nil {

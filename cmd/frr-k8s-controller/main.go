@@ -23,7 +23,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -65,19 +67,24 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
+const (
+	defaultDebounceTimeout = 3 * time.Second
+)
+
 type params struct {
-	metricsAddr         string
-	metricsCertDir      string
-	healthProbeAddr     string
-	logLevel            string
-	nodeName            string
-	namespace           string
-	podName             string
-	pprofAddr           string
-	alwaysBlockCIDRs    string
-	tlsCipherSuites     string
-	tlsCurvePreferences string
-	tlsMinVersion       string
+	metricsAddr          string
+	metricsCertDir       string
+	healthProbeAddr      string
+	logLevel             string
+	nodeName             string
+	namespace            string
+	podName              string
+	pprofAddr            string
+	alwaysBlockCIDRs     string
+	tlsCipherSuites      string
+	tlsCurvePreferences  string
+	tlsMinVersion        string
+	bgpDebounceTimeoutMs string
 }
 
 func main() {
@@ -95,6 +102,9 @@ func main() {
 	flag.StringVar(&params.tlsCipherSuites, "tls-cipher-suites", "", "Comma-separated list of TLS cipher suites. If empty, uses Go defaults.")
 	flag.StringVar(&params.tlsCurvePreferences, "tls-curve-preferences", "", "Comma-separated list of numeric CurveID values (see https://pkg.go.dev/crypto/tls#CurveID). If empty, uses Go defaults.")
 	flag.StringVar(&params.tlsMinVersion, "tls-min-version", "", "Minimum TLS version (VersionTLS12 or VersionTLS13). If empty, defaults to VersionTLS13.")
+	flag.StringVar(&params.bgpDebounceTimeoutMs, "bgp-debounce-timeout", os.Getenv("FRR_K8S_BGP_DEBOUNCE_TIMEOUT"),
+		"BGP debounce timeout for FRR configuration reloads, in milliseconds. "+
+			"Can also be set via FRR_K8S_BGP_DEBOUNCE_TIMEOUT. Default is 3000 ms. This feature is experimental.")
 
 	opts := zap.Options{
 		Development: true,
@@ -181,7 +191,26 @@ func startFRRControllers(ctx context.Context, mgr manager.Manager, params params
 	reloadStatus := func() {
 		reloadStatusChan <- controller.NewStateEvent()
 	}
-	frrInstance := frr.NewFRR(ctx, reloadStatus)
+
+	// Parse BGP debounce timeout from flag/env or use default (3 seconds).
+	// The debounce timeout throttles how often FRR configuration reloads are applied, so that
+	// bursts of updates are coalesced into fewer reloads.
+	dbTimeout := defaultDebounceTimeout
+	if params.bgpDebounceTimeoutMs != "" {
+		parsed, err := strconv.Atoi(params.bgpDebounceTimeoutMs)
+		if err != nil || parsed <= 0 {
+			setupLog.Error(fmt.Errorf("invalid value"), "invalid BGP debounce timeout value, must be a positive integer", "provided", params.bgpDebounceTimeoutMs)
+			os.Exit(1)
+		}
+		dbTimeout = time.Duration(parsed) * time.Millisecond
+	}
+	setupLog.Info("using BGP debounce timeout", "milliseconds", dbTimeout.Milliseconds())
+
+	frrInstance, err := frr.NewFRR(ctx, reloadStatus, dbTimeout)
+	if err != nil {
+		setupLog.Error(err, "failed to create FRR instance")
+		os.Exit(1)
+	}
 
 	alwaysBlock, err := parseCIDRs(params.alwaysBlockCIDRs)
 	if err != nil {
