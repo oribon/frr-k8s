@@ -112,16 +112,6 @@ func mergeAllowedOut(r, toMerge frr.AllowedOut) (frr.AllowedOut, error) {
 		PrefixesV4: sets.List(mergedPrefixesV4),
 		PrefixesV6: sets.List(mergedPrefixesV6),
 	}
-	var err error
-	res.NextHopV4, err = mergeNextHop(r.NextHopV4, toMerge.NextHopV4)
-	if err != nil {
-		return frr.AllowedOut{}, fmt.Errorf("ipv4 next hop: %w", err)
-	}
-	res.NextHopV6, err = mergeNextHop(r.NextHopV6, toMerge.NextHopV6)
-	if err != nil {
-		return frr.AllowedOut{}, fmt.Errorf("ipv6 next hop: %w", err)
-	}
-
 	localPrefForPrefix := map[string]uint32{}
 	for _, p := range r.LocalPrefPrefixesModifiers {
 		for _, prefix := range p.Prefixes.UnsortedList() {
@@ -136,20 +126,44 @@ func mergeAllowedOut(r, toMerge frr.AllowedOut) (frr.AllowedOut, error) {
 		}
 	}
 
+	nextHopForPrefix := map[string]string{}
+	for _, p := range r.NextHopPrefixesModifiers {
+		for _, prefix := range p.Prefixes.UnsortedList() {
+			nextHopForPrefix[prefix] = p.NextHop
+		}
+	}
+	for _, p := range toMerge.NextHopPrefixesModifiers {
+		for _, prefix := range p.Prefixes.UnsortedList() {
+			if existing, ok := nextHopForPrefix[prefix]; ok && existing != p.NextHop {
+				return frr.AllowedOut{}, fmt.Errorf("multiple next hops (%s != %s) specified for prefix %s", existing, p.NextHop, prefix)
+			}
+		}
+	}
+
 	res.CommunityPrefixesModifiers = mergeCommunityPrefixLists(r.CommunityPrefixesModifiers, toMerge.CommunityPrefixesModifiers)
 	res.LocalPrefPrefixesModifiers = mergeLocalPrefPrefixLists(r.LocalPrefPrefixesModifiers, toMerge.LocalPrefPrefixesModifiers)
+	res.NextHopPrefixesModifiers = mergeNextHopPrefixLists(r.NextHopPrefixesModifiers, toMerge.NextHopPrefixesModifiers)
 
 	return res, nil
 }
 
-func mergeNextHop(curr, toMerge string) (string, error) {
-	if curr == "" {
-		return toMerge, nil
+func mergeNextHopPrefixLists(curr, toMerge []frr.NextHopPrefixList) []frr.NextHopPrefixList {
+	allMap := map[string]frr.NextHopPrefixList{}
+	for _, prefixList := range curr {
+		allMap[nextHopPrefixListKey(prefixList.NextHop, prefixList.IPFamily)] = prefixList
 	}
-	if toMerge == "" || curr == toMerge {
-		return curr, nil
+	for _, prefixList := range toMerge {
+		k := nextHopPrefixListKey(prefixList.NextHop, prefixList.IPFamily)
+		addTo, ok := allMap[k]
+		if !ok {
+			allMap[k] = prefixList
+			continue
+		}
+		addTo.Prefixes = addTo.Prefixes.Union(prefixList.Prefixes)
+		allMap[k] = addTo
 	}
-	return "", fmt.Errorf("multiple next hops (%s != %s) specified", curr, toMerge)
+
+	return sortMap(allMap)
 }
 
 func mergeLocalPrefPrefixLists(curr, toMerge []frr.LocalPrefPrefixList) []frr.LocalPrefPrefixList {

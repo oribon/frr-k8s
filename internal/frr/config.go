@@ -124,19 +124,22 @@ func (a *AllowedIn) AllPrefixes() []IncomingFilter {
 type AllowedOut struct {
 	PrefixesV4                 []string
 	PrefixesV6                 []string
-	NextHopV4                  string
-	NextHopV6                  string
 	LocalPrefPrefixesModifiers []LocalPrefPrefixList
 	CommunityPrefixesModifiers []CommunityPrefixList
+	NextHopPrefixesModifiers   []NextHopPrefixList
 }
 
 func (a AllowedOut) PrefixLists() []PropertyPrefixList {
-	res := make([]PropertyPrefixList, len(a.LocalPrefPrefixesModifiers)+len(a.CommunityPrefixesModifiers))
-	for i, v := range a.LocalPrefPrefixesModifiers {
-		res[i] = v
+	total := len(a.LocalPrefPrefixesModifiers) + len(a.CommunityPrefixesModifiers) + len(a.NextHopPrefixesModifiers)
+	res := make([]PropertyPrefixList, 0, total)
+	for _, v := range a.LocalPrefPrefixesModifiers {
+		res = append(res, v)
 	}
-	for i, v := range a.CommunityPrefixesModifiers {
-		res[i+len(a.LocalPrefPrefixesModifiers)] = v
+	for _, v := range a.CommunityPrefixesModifiers {
+		res = append(res, v)
+	}
+	for _, v := range a.NextHopPrefixesModifiers {
+		res = append(res, v)
 	}
 	sort.Slice(res, func(i, j int) bool {
 		return res[i].PrefixListName() < res[j].PrefixListName()
@@ -178,6 +181,18 @@ type LocalPrefPrefixList struct {
 
 func (pl LocalPrefPrefixList) SetStatement() string {
 	return fmt.Sprintf("set local-preference %d", pl.LocalPref)
+}
+
+type NextHopPrefixList struct {
+	PrefixList
+	NextHop string
+}
+
+func (pl NextHopPrefixList) SetStatement() string {
+	if pl.IPFamily == "ip" {
+		return fmt.Sprintf("set ip next-hop %s", pl.NextHop)
+	}
+	return fmt.Sprintf("set ipv6 next-hop global %s", pl.NextHop)
 }
 
 type PropertyPrefixList interface {

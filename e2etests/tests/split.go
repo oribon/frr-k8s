@@ -190,14 +190,14 @@ func splitByNextHop(cfg frrk8sv1beta1.FRRConfiguration) ([]frrk8sv1beta1.FRRConf
 
 	withoutNextHop := func(n frrk8sv1beta1.Neighbor) frrk8sv1beta1.Neighbor {
 		res := n.DeepCopy()
-		res.ToAdvertise.NextHop = frrk8sv1beta1.NextHop{}
+		res.ToAdvertise.PrefixesWithNextHop = nil
 		return *res
 	}
 
 	onlyNextHop := func(n frrk8sv1beta1.Neighbor) frrk8sv1beta1.Neighbor {
 		res := n.DeepCopy()
 		res.ToAdvertise = frrk8sv1beta1.Advertise{
-			NextHop: res.ToAdvertise.NextHop,
+			PrefixesWithNextHop: res.ToAdvertise.PrefixesWithNextHop,
 		}
 		return *res
 	}

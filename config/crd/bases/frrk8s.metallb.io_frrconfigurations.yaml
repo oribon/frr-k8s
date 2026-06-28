@@ -645,22 +645,6 @@ spec:
                                           type: string
                                         type: array
                                     type: object
-                                  nextHop:
-                                    description: |-
-                                      NextHop sets the BGP next-hop address to advertise with prefixes
-                                      sent to this neighbor.
-                                    properties:
-                                      ipv4:
-                                        description: IPv4 is the next-hop address
-                                          to advertise with IPv4 prefixes.
-                                        format: ipv4
-                                        type: string
-                                      ipv6:
-                                        description: IPv6 is the next-hop address
-                                          to advertise with IPv6 prefixes.
-                                        format: ipv6
-                                        type: string
-                                    type: object
                                   withCommunity:
                                     description: |-
                                       PrefixesWithCommunity is a list of prefixes that are associated to a
@@ -706,6 +690,33 @@ spec:
                                             type: string
                                           minItems: 1
                                           type: array
+                                      type: object
+                                    type: array
+                                  withNextHop:
+                                    description: |-
+                                      PrefixesWithNextHop is a list of prefixes that are associated to a
+                                      next-hop address override when being advertised. The prefixes associated
+                                      to a given next-hop must be in the prefixes allowed to be advertised.
+                                      The next-hop address must match the address family of the prefixes.
+                                    items:
+                                      description: NextHopPrefixes is a list of prefixes
+                                        associated to a next-hop address override.
+                                      properties:
+                                        nextHop:
+                                          description: |-
+                                            NextHop is the next-hop address to use when advertising these prefixes.
+                                            Can be IPv4 or IPv6. Must match the address family of the prefixes.
+                                          type: string
+                                        prefixes:
+                                          description: Prefixes is the list of prefixes
+                                            associated to the next-hop override.
+                                          format: cidr
+                                          items:
+                                            type: string
+                                          minItems: 1
+                                          type: array
+                                      required:
+                                      - nextHop
                                       type: object
                                     type: array
                                 type: object

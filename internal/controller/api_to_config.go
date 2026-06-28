@@ -290,6 +290,7 @@ func toAdvertiseToFRR(neighbor *frr.NeighborConfig, toAdvertise v1beta1.Advertis
 		PrefixesV6:                 make([]string, 0),
 		LocalPrefPrefixesModifiers: make([]frr.LocalPrefPrefixList, 0),
 		CommunityPrefixesModifiers: make([]frr.CommunityPrefixList, 0),
+		NextHopPrefixesModifiers:   make([]frr.NextHopPrefixList, 0),
 	}
 
 	if neighborHasIPFamily(neighbor, ipfamily.IPv4) {
@@ -298,16 +299,13 @@ func toAdvertiseToFRR(neighbor *frr.NeighborConfig, toAdvertise v1beta1.Advertis
 	if neighborHasIPFamily(neighbor, ipfamily.IPv6) {
 		res.PrefixesV6 = sets.List(prefixesForFamily[ipfamily.IPv6])
 	}
-	var err error
-	res.NextHopV4, res.NextHopV6, err = nextHopToFRR(neighbor, toAdvertise.NextHop)
-	if err != nil {
-		return frr.AllowedOut{}, err
-	}
 
 	// map per ip family per local preference
 	localPreferencePrefixLists := map[string]frr.LocalPrefPrefixList{}
 	// map per ip family per community
 	communityPrefixLists := map[string]frr.CommunityPrefixList{}
+	// map per ip family per next hop
+	nextHopPrefixLists := map[string]frr.NextHopPrefixList{}
 
 	for _, ipFamily := range neighborIPFamilies {
 		var err error
@@ -319,37 +317,69 @@ func toAdvertiseToFRR(neighbor *frr.NeighborConfig, toAdvertise v1beta1.Advertis
 		if err != nil {
 			return frr.AllowedOut{}, fmt.Errorf("failed to process local pref for neighbor %s, err: %w", neighbor.Name, err)
 		}
+		nextHopPrefixLists, err = prefixesWithNextHopToFRR(nextHopPrefixLists, neighbor, toAdvertise, ipFamily, prefixesForFamily[ipFamily])
+		if err != nil {
+			return frr.AllowedOut{}, fmt.Errorf("failed to process next hop for neighbor %s, err: %w", neighbor.Name, err)
+		}
 	}
 	res.LocalPrefPrefixesModifiers = sortMap(localPreferencePrefixLists)
 	res.CommunityPrefixesModifiers = sortMap(communityPrefixLists)
+	res.NextHopPrefixesModifiers = sortMap(nextHopPrefixLists)
 
 	return res, nil
 }
 
-func nextHopToFRR(neighbor *frr.NeighborConfig, nextHop v1beta1.NextHop) (string, string, error) {
-	if nextHop.IPv4 != "" {
-		ip := net.ParseIP(nextHop.IPv4)
-		if ip == nil || ip.To4() == nil {
-			return "", "", fmt.Errorf("invalid ipv4 next hop %q for neighbor %s", nextHop.IPv4, neighbor.Name)
+func prefixesWithNextHopToFRR(toAdd map[string]frr.NextHopPrefixList, neighbor *frr.NeighborConfig, toAdvertise v1beta1.Advertise, ipFamily ipfamily.Family, routerPrefixes sets.Set[string]) (map[string]frr.NextHopPrefixList, error) {
+	frrFamily := frrIPFamily(ipFamily)
+	for _, prefixes := range toAdvertise.PrefixesWithNextHop {
+		nextHopIP := net.ParseIP(prefixes.NextHop)
+		if nextHopIP == nil {
+			return nil, fmt.Errorf("invalid next hop address %q", prefixes.NextHop)
 		}
-		if !neighborHasIPFamily(neighbor, ipfamily.IPv4) {
-			return "", "", fmt.Errorf("ipv4 next hop %q set for neighbor %s without an ipv4 address family",
-				nextHop.IPv4, neighbor.Name)
-		}
-	}
 
-	if nextHop.IPv6 != "" {
-		ip := net.ParseIP(nextHop.IPv6)
-		if ip == nil || ip.To4() != nil {
-			return "", "", fmt.Errorf("invalid ipv6 next hop %q for neighbor %s", nextHop.IPv6, neighbor.Name)
+		isV4 := nextHopIP.To4() != nil
+		if isV4 && ipFamily != ipfamily.IPv4 {
+			continue
 		}
-		if !neighborHasIPFamily(neighbor, ipfamily.IPv6) {
-			return "", "", fmt.Errorf("ipv6 next hop %q set for neighbor %s without an ipv6 address family",
-				nextHop.IPv6, neighbor.Name)
+		if !isV4 && ipFamily != ipfamily.IPv6 {
+			continue
 		}
-	}
 
-	return nextHop.IPv4, nextHop.IPv6, nil
+		if !neighborHasIPFamily(neighbor, ipFamily) {
+			return nil, fmt.Errorf("next hop %q set for neighbor %s without a matching address family",
+				prefixes.NextHop, neighbor.Name)
+		}
+
+		key := nextHopPrefixListKey(prefixes.NextHop, frrFamily)
+		if _, ok := toAdd[key]; ok {
+			return nil, fmt.Errorf("next hop %s is already defined", prefixes.NextHop)
+		}
+
+		nextHopPrefixList := frr.NextHopPrefixList{
+			PrefixList: frr.PrefixList{
+				Name:     nextHopPrefixListName(neighbor.ID(), prefixes.NextHop, frrFamily),
+				IPFamily: frrFamily,
+				Prefixes: sets.New[string](),
+			},
+			NextHop: prefixes.NextHop,
+		}
+
+		ipfamilyPrefixes := ipfamily.FilterPrefixes(prefixes.Prefixes, ipFamily)
+		if len(ipfamilyPrefixes) == 0 {
+			continue
+		}
+		for _, prefix := range ipfamilyPrefixes {
+			if !routerPrefixes.Has(prefix) {
+				return nil, fmt.Errorf("next hop %s associated to non existing prefix %s", prefixes.NextHop, prefix)
+			}
+			if nextHopPrefixList.Prefixes.Has(prefix) {
+				return nil, fmt.Errorf("prefix %s is already defined for next hop %s", prefix, prefixes.NextHop)
+			}
+			nextHopPrefixList.Prefixes.Insert(prefix)
+		}
+		toAdd[key] = nextHopPrefixList
+	}
+	return toAdd, nil
 }
 
 func prefixesWithLocalPrefToFRR(toAdd map[string]frr.LocalPrefPrefixList, neighbor *frr.NeighborConfig, toAdvertise v1beta1.Advertise, ipFamily ipfamily.Family, routerPrefixes sets.Set[string]) (map[string]frr.LocalPrefPrefixList, error) {
@@ -481,6 +511,14 @@ func localPrefPrefixListKey(localPref uint32, frrAddressFamily string) string {
 	return fmt.Sprintf("%d-%s", localPref, frrAddressFamily)
 }
 
+func nextHopPrefixListName(neighborID string, nextHop string, ipFamily string) string {
+	return fmt.Sprintf("%s-%s-%s-nexthop-prefixes", neighborID, nextHop, ipFamily)
+}
+
+func nextHopPrefixListKey(nextHop string, frrAddressFamily string) string {
+	return fmt.Sprintf("%s-%s", nextHop, frrAddressFamily)
+}
+
 func toReceiveToFRR(toReceive v1beta1.Receive) (frr.AllowedIn, error) {
 	res := frr.AllowedIn{
 		PrefixesV4: make([]frr.IncomingFilter, 0),
@@ -590,6 +628,30 @@ func validateOutgoingPrefixes(prefixesInRouter []string, routerConfig v1beta1.Ro
 		for _, prefixes := range n.ToAdvertise.PrefixesWithCommunity {
 			if err := validatePrefixesForNeighborFamily(prefixes.Prefixes, neighborFamily); err != nil {
 				return fmt.Errorf("invalid prefixes %s for community %s for neighbor %s, err: %w", prefixes.Prefixes, prefixes.Community, neighborName(n), err)
+			}
+		}
+
+		nextHopForPrefix := map[string]string{}
+		for _, prefixes := range n.ToAdvertise.PrefixesWithNextHop {
+			if err := validatePrefixesForNeighborFamily(prefixes.Prefixes, neighborFamily); err != nil {
+				return fmt.Errorf("invalid prefixes %s for next hop %s for neighbor %s, err: %w", prefixes.Prefixes, prefixes.NextHop, neighborName(n), err)
+			}
+
+			nextHopIP := net.ParseIP(prefixes.NextHop)
+			if nextHopIP == nil {
+				return fmt.Errorf("invalid next hop address %q for neighbor %s", prefixes.NextHop, neighborName(n))
+			}
+			nextHopIsV4 := nextHopIP.To4() != nil
+			for _, p := range prefixes.Prefixes {
+				prefixFamily := ipfamily.ForCIDRString(p)
+				if (nextHopIsV4 && prefixFamily != ipfamily.IPv4) || (!nextHopIsV4 && prefixFamily != ipfamily.IPv6) {
+					return fmt.Errorf("next hop %s address family does not match prefix %s for neighbor %s",
+						prefixes.NextHop, p, neighborName(n))
+				}
+				if existing, ok := nextHopForPrefix[p]; ok && existing != prefixes.NextHop {
+					return fmt.Errorf("prefix %s is configured with both next hop %s and %s", p, existing, prefixes.NextHop)
+				}
+				nextHopForPrefix[p] = prefixes.NextHop
 			}
 		}
 

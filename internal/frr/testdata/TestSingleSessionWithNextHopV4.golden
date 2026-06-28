@@ -5,6 +5,13 @@ ip nht resolve-via-default
 ipv6 nht resolve-via-default
 
 
+ip prefix-list 192.168.1.2-192.168.1.1-ip-nexthop-prefixes seq 1 permit 192.169.1.0/24
+ip prefix-list 192.168.1.2-192.168.1.1-ip-nexthop-prefixes seq 2 permit 192.170.1.0/22
+
+route-map 192.168.1.2-out permit 1
+  match ip address prefix-list 192.168.1.2-192.168.1.1-ip-nexthop-prefixes
+  set ip next-hop 192.168.1.1
+  on-match next
 
 ip prefix-list 192.168.1.2-allowed-ipv4 seq 1 permit 192.169.1.0/24
 ip prefix-list 192.168.1.2-allowed-ipv4 seq 2 permit 192.170.1.0/22
@@ -12,11 +19,10 @@ ip prefix-list 192.168.1.2-allowed-ipv4 seq 2 permit 192.170.1.0/22
 
 ipv6 prefix-list 192.168.1.2-allowed-ipv6 seq 1 deny any
 
-route-map 192.168.1.2-out permit 1
-  match ip address prefix-list 192.168.1.2-allowed-ipv4
-  set ip next-hop 192.168.1.1
-
 route-map 192.168.1.2-out permit 2
+  match ip address prefix-list 192.168.1.2-allowed-ipv4
+
+route-map 192.168.1.2-out permit 3
   match ipv6 address prefix-list 192.168.1.2-allowed-ipv6
 
 
@@ -26,9 +32,9 @@ route-map 192.168.1.2-out permit 2
 ip prefix-list 192.168.1.2-inpl-ipv4 seq 1 deny any
 
 ipv6 prefix-list 192.168.1.2-inpl-ipv4 seq 2 deny any
-route-map 192.168.1.2-in permit 3
-  match ip address prefix-list 192.168.1.2-inpl-ipv4
 route-map 192.168.1.2-in permit 4
+  match ip address prefix-list 192.168.1.2-inpl-ipv4
+route-map 192.168.1.2-in permit 5
   match ipv6 address prefix-list 192.168.1.2-inpl-ipv4
 
 router bgp 65000
@@ -39,9 +45,9 @@ router bgp 65000
 
   neighbor 192.168.1.2 remote-as 65001
   neighbor 192.168.1.2 port 4567
-  
-  
-  
+
+
+
 
   address-family ipv4 unicast
     neighbor 192.168.1.2 activate

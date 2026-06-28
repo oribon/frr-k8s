@@ -111,8 +111,11 @@ var _ = ginkgo.Describe("Webhooks", func() {
 										Allowed: frrk8sv1beta1.AllowedOutPrefixes{
 											Mode: frrk8sv1beta1.AllowAll,
 										},
-										NextHop: frrk8sv1beta1.NextHop{
-											IPv6: "2001:db8::1",
+										PrefixesWithNextHop: []frrk8sv1beta1.NextHopPrefixes{
+											{
+												Prefixes: []string{"192.0.2.0/24"},
+												NextHop:  "2001:db8::1",
+											},
 										},
 									},
 								},
@@ -120,7 +123,7 @@ var _ = ginkgo.Describe("Webhooks", func() {
 						},
 					}
 				},
-				"without an ipv6 address family",
+				"matching address family",
 			),
 			ginkgo.Entry("ipv6 neighbor with ipv4 next hop",
 				func(cfg *frrk8sv1beta1.FRRConfiguration) {
@@ -136,8 +139,11 @@ var _ = ginkgo.Describe("Webhooks", func() {
 										Allowed: frrk8sv1beta1.AllowedOutPrefixes{
 											Mode: frrk8sv1beta1.AllowAll,
 										},
-										NextHop: frrk8sv1beta1.NextHop{
-											IPv4: "192.0.2.1",
+										PrefixesWithNextHop: []frrk8sv1beta1.NextHopPrefixes{
+											{
+												Prefixes: []string{"2001:db8::/64"},
+												NextHop:  "192.0.2.1",
+											},
 										},
 									},
 								},
@@ -145,7 +151,7 @@ var _ = ginkgo.Describe("Webhooks", func() {
 						},
 					}
 				},
-				"without an ipv4 address family",
+				"matching address family",
 			),
 			ginkgo.Entry("localpref on non-existing prefix",
 				func(cfg *frrk8sv1beta1.FRRConfiguration) {

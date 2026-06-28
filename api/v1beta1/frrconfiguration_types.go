@@ -245,11 +245,6 @@ type Advertise struct {
 	// this neighbor. They must match the prefixes defined in the router.
 	Allowed AllowedOutPrefixes `json:"allowed,omitempty"`
 
-	// NextHop sets the BGP next-hop address to advertise with prefixes
-	// sent to this neighbor.
-	// +optional
-	NextHop NextHop `json:"nextHop,omitempty"`
-
 	// PrefixesWithLocalPref is a list of prefixes that are associated to a local
 	// preference when being advertised. The prefixes associated to a given local pref
 	// must be in the prefixes allowed to be advertised.
@@ -261,19 +256,25 @@ type Advertise struct {
 	// must be in the prefixes allowed to be advertised.
 	// +optional
 	PrefixesWithCommunity []CommunityPrefixes `json:"withCommunity,omitempty"`
+
+	// PrefixesWithNextHop is a list of prefixes that are associated to a
+	// next-hop address override when being advertised. The prefixes associated
+	// to a given next-hop must be in the prefixes allowed to be advertised.
+	// The next-hop address must match the address family of the prefixes.
+	// +optional
+	PrefixesWithNextHop []NextHopPrefixes `json:"withNextHop,omitempty"`
 }
 
-// NextHop sets the BGP next-hop address for advertised prefixes.
-type NextHop struct {
-	// IPv4 is the next-hop address to advertise with IPv4 prefixes.
-	// +optional
-	// +kubebuilder:validation:Format=ipv4
-	IPv4 string `json:"ipv4,omitempty"`
+// NextHopPrefixes is a list of prefixes associated to a next-hop address override.
+type NextHopPrefixes struct {
+	// Prefixes is the list of prefixes associated to the next-hop override.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:Format="cidr"
+	Prefixes []string `json:"prefixes,omitempty"`
 
-	// IPv6 is the next-hop address to advertise with IPv6 prefixes.
-	// +optional
-	// +kubebuilder:validation:Format=ipv6
-	IPv6 string `json:"ipv6,omitempty"`
+	// NextHop is the next-hop address to use when advertising these prefixes.
+	// Can be IPv4 or IPv6. Must match the address family of the prefixes.
+	NextHop string `json:"nextHop"`
 }
 
 // Receive represents a list of prefixes to receive from the given neighbor.

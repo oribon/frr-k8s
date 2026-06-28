@@ -17,6 +17,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
 )
 
@@ -351,8 +352,11 @@ func TestConversion(t *testing.T) {
 													Prefixes: []string{"192.0.2.0/24"},
 													Mode:     v1beta1.AllowRestricted,
 												},
-												NextHop: v1beta1.NextHop{
-													IPv4: "192.0.2.1",
+												PrefixesWithNextHop: []v1beta1.NextHopPrefixes{
+													{
+														Prefixes: []string{"192.0.2.0/24"},
+														NextHop:  "192.0.2.1",
+													},
 												},
 											},
 										},
@@ -378,7 +382,16 @@ func TestConversion(t *testing.T) {
 								Addr:     "192.0.2.21",
 								Outgoing: frr.AllowedOut{
 									PrefixesV4: []string{"192.0.2.0/24"},
-									NextHopV4:  "192.0.2.1",
+									NextHopPrefixesModifiers: []frr.NextHopPrefixList{
+										{
+											PrefixList: frr.PrefixList{
+												Name:     "192.0.2.21-192.0.2.1-ip-nexthop-prefixes",
+												IPFamily: "ip",
+												Prefixes: sets.New[string]("192.0.2.0/24"),
+											},
+											NextHop: "192.0.2.1",
+										},
+									},
 								},
 							},
 						},
@@ -407,8 +420,11 @@ func TestConversion(t *testing.T) {
 													Prefixes: []string{"2001:db8::/64"},
 													Mode:     v1beta1.AllowRestricted,
 												},
-												NextHop: v1beta1.NextHop{
-													IPv6: "2001:db8::1",
+												PrefixesWithNextHop: []v1beta1.NextHopPrefixes{
+													{
+														Prefixes: []string{"2001:db8::/64"},
+														NextHop:  "2001:db8::1",
+													},
 												},
 											},
 										},
@@ -434,7 +450,16 @@ func TestConversion(t *testing.T) {
 								Addr:     "2001:db8::21",
 								Outgoing: frr.AllowedOut{
 									PrefixesV6: []string{"2001:db8::/64"},
-									NextHopV6:  "2001:db8::1",
+									NextHopPrefixesModifiers: []frr.NextHopPrefixList{
+										{
+											PrefixList: frr.PrefixList{
+												Name:     "2001:db8::21-2001:db8::1-ipv6-nexthop-prefixes",
+												IPFamily: "ipv6",
+												Prefixes: sets.New[string]("2001:db8::/64"),
+											},
+											NextHop: "2001:db8::1",
+										},
+									},
 								},
 							},
 						},
@@ -462,9 +487,15 @@ func TestConversion(t *testing.T) {
 												Allowed: v1beta1.AllowedOutPrefixes{
 													Mode: v1beta1.AllowAll,
 												},
-												NextHop: v1beta1.NextHop{
-													IPv4: "192.0.2.1",
-													IPv6: "2001:db8::1",
+												PrefixesWithNextHop: []v1beta1.NextHopPrefixes{
+													{
+														Prefixes: []string{"192.0.2.0/24"},
+														NextHop:  "192.0.2.1",
+													},
+													{
+														Prefixes: []string{"2001:db8::/64"},
+														NextHop:  "2001:db8::1",
+													},
 												},
 											},
 											DualStackAddressFamily: true,
@@ -492,8 +523,24 @@ func TestConversion(t *testing.T) {
 								Outgoing: frr.AllowedOut{
 									PrefixesV4: []string{"192.0.2.0/24"},
 									PrefixesV6: []string{"2001:db8::/64"},
-									NextHopV4:  "192.0.2.1",
-									NextHopV6:  "2001:db8::1",
+									NextHopPrefixesModifiers: []frr.NextHopPrefixList{
+										{
+											PrefixList: frr.PrefixList{
+												Name:     "192.0.2.21-192.0.2.1-ip-nexthop-prefixes",
+												IPFamily: "ip",
+												Prefixes: sets.New[string]("192.0.2.0/24"),
+											},
+											NextHop: "192.0.2.1",
+										},
+										{
+											PrefixList: frr.PrefixList{
+												Name:     "192.0.2.21-2001:db8::1-ipv6-nexthop-prefixes",
+												IPFamily: "ipv6",
+												Prefixes: sets.New[string]("2001:db8::/64"),
+											},
+											NextHop: "2001:db8::1",
+										},
+									},
 								},
 							},
 						},
@@ -522,8 +569,11 @@ func TestConversion(t *testing.T) {
 												Allowed: v1beta1.AllowedOutPrefixes{
 													Mode: v1beta1.AllowAll,
 												},
-												NextHop: v1beta1.NextHop{
-													IPv4: "2001:db8::1",
+												PrefixesWithNextHop: []v1beta1.NextHopPrefixes{
+													{
+														Prefixes: []string{"192.0.2.0/24"},
+														NextHop:  "2001:db8::1",
+													},
 												},
 											},
 										},
@@ -556,8 +606,11 @@ func TestConversion(t *testing.T) {
 												Allowed: v1beta1.AllowedOutPrefixes{
 													Mode: v1beta1.AllowAll,
 												},
-												NextHop: v1beta1.NextHop{
-													IPv6: "192.0.2.1",
+												PrefixesWithNextHop: []v1beta1.NextHopPrefixes{
+													{
+														Prefixes: []string{"2001:db8::/64"},
+														NextHop:  "192.0.2.1",
+													},
 												},
 											},
 										},
@@ -590,8 +643,11 @@ func TestConversion(t *testing.T) {
 												Allowed: v1beta1.AllowedOutPrefixes{
 													Mode: v1beta1.AllowAll,
 												},
-												NextHop: v1beta1.NextHop{
-													IPv6: "2001:db8::1",
+												PrefixesWithNextHop: []v1beta1.NextHopPrefixes{
+													{
+														Prefixes: []string{"192.0.2.0/24"},
+														NextHop:  "2001:db8::1",
+													},
 												},
 											},
 										},
@@ -624,8 +680,11 @@ func TestConversion(t *testing.T) {
 												Allowed: v1beta1.AllowedOutPrefixes{
 													Mode: v1beta1.AllowAll,
 												},
-												NextHop: v1beta1.NextHop{
-													IPv4: "192.0.2.1",
+												PrefixesWithNextHop: []v1beta1.NextHopPrefixes{
+													{
+														Prefixes: []string{"2001:db8::/64"},
+														NextHop:  "192.0.2.1",
+													},
 												},
 											},
 										},

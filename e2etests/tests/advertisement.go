@@ -297,7 +297,12 @@ var _ = ginkgo.Describe("Advertisement", func() {
 							ginkgo.Skip("next-hop e2e requires at least two IPv4 peers on the same network")
 						}
 						ppV4[i].Neigh.ToAdvertise.Allowed.Mode = frrk8sv1beta1.AllowAll
-						ppV4[i].Neigh.ToAdvertise.NextHop.IPv4 = nextHop
+						ppV4[i].Neigh.ToAdvertise.PrefixesWithNextHop = []frrk8sv1beta1.NextHopPrefixes{
+							{
+								Prefixes: []string{"192.168.200.0/24"},
+								NextHop:  nextHop,
+							},
+						}
 					}
 					for i := range ppV6 {
 						nextHop, found := nextHopPeerIPOnSameNetwork(ppV6, i)
@@ -305,15 +310,20 @@ var _ = ginkgo.Describe("Advertisement", func() {
 							ginkgo.Skip("next-hop e2e requires at least two IPv6 peers on the same network")
 						}
 						ppV6[i].Neigh.ToAdvertise.Allowed.Mode = frrk8sv1beta1.AllowAll
-						ppV6[i].Neigh.ToAdvertise.NextHop.IPv6 = nextHop
+						ppV6[i].Neigh.ToAdvertise.PrefixesWithNextHop = []frrk8sv1beta1.NextHopPrefixes{
+							{
+								Prefixes: []string{"fc00:f853:ccd:e950::/64"},
+								NextHop:  nextHop,
+							},
+						}
 					}
 				},
 				validate: func(ppV4 []config.Peer, ppV6 []config.Peer, _ []v1.Node) {
 					for _, p := range ppV4 {
-						ValidatePrefixesForNeighborWithNextHop(p.FRR, p.Neigh.ToAdvertise.NextHop.IPv4, "192.168.200.0/24")
+						ValidatePrefixesForNeighborWithNextHop(p.FRR, p.Neigh.ToAdvertise.PrefixesWithNextHop[0].NextHop, "192.168.200.0/24")
 					}
 					for _, p := range ppV6 {
-						ValidatePrefixesForNeighborWithNextHop(p.FRR, p.Neigh.ToAdvertise.NextHop.IPv6, "fc00:f853:ccd:e950::/64")
+						ValidatePrefixesForNeighborWithNextHop(p.FRR, p.Neigh.ToAdvertise.PrefixesWithNextHop[0].NextHop, "fc00:f853:ccd:e950::/64")
 					}
 				},
 				splitCfg: splitByNextHop,

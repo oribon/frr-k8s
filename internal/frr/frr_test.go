@@ -169,7 +169,16 @@ func TestSingleSessionWithNextHopV4(t *testing.T) {
 								"192.169.1.0/24",
 								"192.170.1.0/22",
 							},
-							NextHopV4: "192.168.1.1",
+							NextHopPrefixesModifiers: []NextHopPrefixList{
+								{
+									PrefixList: PrefixList{
+										Name:     "192.168.1.2-192.168.1.1-ip-nexthop-prefixes",
+										IPFamily: "ip",
+										Prefixes: sets.New[string]("192.169.1.0/24", "192.170.1.0/22"),
+									},
+									NextHop: "192.168.1.1",
+								},
+							},
 						},
 					},
 				},
@@ -205,7 +214,16 @@ func TestSingleSessionWithNextHopV6(t *testing.T) {
 							PrefixesV6: []string{
 								"2001:db8:abcd::/48",
 							},
-							NextHopV6: "2001:db8::2",
+							NextHopPrefixesModifiers: []NextHopPrefixList{
+								{
+									PrefixList: PrefixList{
+										Name:     "2001:db8::1-2001:db8::2-ipv6-nexthop-prefixes",
+										IPFamily: "ipv6",
+										Prefixes: sets.New[string]("2001:db8:abcd::/48"),
+									},
+									NextHop: "2001:db8::2",
+								},
+							},
 						},
 					},
 				},

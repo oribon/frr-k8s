@@ -1032,7 +1032,16 @@ func TestMergeNeighbors(t *testing.T) {
 					Addr:     "192.0.1.20",
 					Outgoing: frr.AllowedOut{
 						PrefixesV4: []string{"192.0.2.0/24"},
-						NextHopV4:  "192.0.2.1",
+						NextHopPrefixesModifiers: []frr.NextHopPrefixList{
+							{
+								PrefixList: frr.PrefixList{
+									Name:     "192.0.1.20-192.0.2.1-ip-nexthop-prefixes",
+									IPFamily: "ip",
+									Prefixes: sets.New[string]("192.0.2.0/24"),
+								},
+								NextHop: "192.0.2.1",
+							},
+						},
 					},
 				},
 			},
@@ -1044,11 +1053,20 @@ func TestMergeNeighbors(t *testing.T) {
 					Addr:     "192.0.1.20",
 					Outgoing: frr.AllowedOut{
 						PrefixesV4: []string{"192.0.2.0/24"},
-						NextHopV4:  "192.0.2.2",
+						NextHopPrefixesModifiers: []frr.NextHopPrefixList{
+							{
+								PrefixList: frr.PrefixList{
+									Name:     "192.0.1.20-192.0.2.2-ip-nexthop-prefixes",
+									IPFamily: "ip",
+									Prefixes: sets.New[string]("192.0.2.0/24"),
+								},
+								NextHop: "192.0.2.2",
+							},
+						},
 					},
 				},
 			},
-			err: fmt.Errorf("ipv4 next hop: multiple next hops (192.0.2.1 != 192.0.2.2) specified"),
+			err: fmt.Errorf("multiple next hops (192.0.2.1 != 192.0.2.2) specified for prefix %s", "192.0.2.0/24"),
 		},
 		{
 			name: "Multiple ipv6 next hops for a prefix family",
@@ -1060,7 +1078,16 @@ func TestMergeNeighbors(t *testing.T) {
 					Addr:     "192.0.1.20",
 					Outgoing: frr.AllowedOut{
 						PrefixesV6: []string{"2001:db8::/64"},
-						NextHopV6:  "2001:db8::1",
+						NextHopPrefixesModifiers: []frr.NextHopPrefixList{
+							{
+								PrefixList: frr.PrefixList{
+									Name:     "192.0.1.20-2001:db8::1-ipv6-nexthop-prefixes",
+									IPFamily: "ipv6",
+									Prefixes: sets.New[string]("2001:db8::/64"),
+								},
+								NextHop: "2001:db8::1",
+							},
+						},
 					},
 				},
 			},
@@ -1072,11 +1099,20 @@ func TestMergeNeighbors(t *testing.T) {
 					Addr:     "192.0.1.20",
 					Outgoing: frr.AllowedOut{
 						PrefixesV6: []string{"2001:db8::/64"},
-						NextHopV6:  "2001:db8::2",
+						NextHopPrefixesModifiers: []frr.NextHopPrefixList{
+							{
+								PrefixList: frr.PrefixList{
+									Name:     "192.0.1.20-2001:db8::2-ipv6-nexthop-prefixes",
+									IPFamily: "ipv6",
+									Prefixes: sets.New[string]("2001:db8::/64"),
+								},
+								NextHop: "2001:db8::2",
+							},
+						},
 					},
 				},
 			},
-			err: fmt.Errorf("ipv6 next hop: multiple next hops (2001:db8::1 != 2001:db8::2) specified"),
+			err: fmt.Errorf("multiple next hops (2001:db8::1 != 2001:db8::2) specified for prefix %s", "2001:db8::/64"),
 		},
 		{
 			name: "Next hop merged from one config",
@@ -1099,8 +1135,24 @@ func TestMergeNeighbors(t *testing.T) {
 					ASN:      "65040",
 					Addr:     "192.0.1.20",
 					Outgoing: frr.AllowedOut{
-						NextHopV4: "192.0.2.1",
-						NextHopV6: "2001:db8::1",
+						NextHopPrefixesModifiers: []frr.NextHopPrefixList{
+							{
+								PrefixList: frr.PrefixList{
+									Name:     "192.0.1.20-192.0.2.1-ip-nexthop-prefixes",
+									IPFamily: "ip",
+									Prefixes: sets.New[string]("192.0.2.0/24"),
+								},
+								NextHop: "192.0.2.1",
+							},
+							{
+								PrefixList: frr.PrefixList{
+									Name:     "192.0.1.20-2001:db8::1-ipv6-nexthop-prefixes",
+									IPFamily: "ipv6",
+									Prefixes: sets.New[string]("2001:db8::/64"),
+								},
+								NextHop: "2001:db8::1",
+							},
+						},
 					},
 				},
 			},
@@ -1113,8 +1165,24 @@ func TestMergeNeighbors(t *testing.T) {
 					Outgoing: frr.AllowedOut{
 						PrefixesV4: []string{"192.0.2.0/24"},
 						PrefixesV6: []string{"2001:db8::/64"},
-						NextHopV4:  "192.0.2.1",
-						NextHopV6:  "2001:db8::1",
+						NextHopPrefixesModifiers: []frr.NextHopPrefixList{
+							{
+								PrefixList: frr.PrefixList{
+									Name:     "192.0.1.20-192.0.2.1-ip-nexthop-prefixes",
+									IPFamily: "ip",
+									Prefixes: sets.New[string]("192.0.2.0/24"),
+								},
+								NextHop: "192.0.2.1",
+							},
+							{
+								PrefixList: frr.PrefixList{
+									Name:     "192.0.1.20-2001:db8::1-ipv6-nexthop-prefixes",
+									IPFamily: "ipv6",
+									Prefixes: sets.New[string]("2001:db8::/64"),
+								},
+								NextHop: "2001:db8::1",
+							},
+						},
 					},
 				},
 			},
