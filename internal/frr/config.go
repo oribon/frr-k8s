@@ -214,6 +214,7 @@ func (i IncomingFilter) Matcher() string {
 	}
 	if i.GE != 0 {
 		res += fmt.Sprintf(" ge %d", i.GE)
+		fmt.Println("hi!")
 	}
 	return res
 }
